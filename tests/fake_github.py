@@ -31,6 +31,7 @@ class FakeGitHub:
         self.files: dict[tuple[str, str, str], str] = {}
         self.requests: list[tuple[str, str]] = []
         self.fail_next: dict[str, int] = {}  # e.g. {"release": 1}: the next release fails with a 502
+        self.refuse_repos = False  # True: making a repository is refused, as for the Mistral GitHub App
         self._numbers: dict[str, int] = {}
 
     # --- Setup ----------------------------------------------------------------------------------------------
@@ -202,6 +203,8 @@ class FakeGitHub:
         return httpx.Response(201, json=asset)
 
     def _create_repo(self, request: httpx.Request, body: Any) -> httpx.Response:
+        if self.refuse_repos:  # as GitHub answers an app that may not create repositories
+            return httpx.Response(403, json={"message": "Resource not accessible by integration"})
         repo = f"{self.user}/{body['name']}"
         if repo in self.repos:
             return httpx.Response(422, json={"message": "Repository creation failed: name already exists on this account"})

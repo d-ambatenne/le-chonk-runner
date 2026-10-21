@@ -222,7 +222,15 @@ class TriageTools:
         name = name.strip().removesuffix(".git")
         if not re.fullmatch(r"[A-Za-z0-9._-]{1,100}", name) or name in (".", ".."):
             raise ValueError(f"{name!r} can't be a repository name: use letters, digits, '-', '_' and '.'")
-        repo = await self.github.create_repo(name, description.strip())
+        try:
+            repo = await self.github.create_repo(name, description.strip())
+        except GitHubError as exc:
+            if exc.status != 403:
+                raise
+            raise ValueError(f"GitHub refused to create {name} ({exc}): the GitHub access this agent has may not create repositories. "
+                             f"Ask the person to create an empty private repository named {name} on GitHub themselves, to give the "
+                             "agent's GitHub access to it (for Studio's GitHub connector: github.com/apps/mistralai › Configure › "
+                             "Repository access), and to send you its URL; then call set_project with it.") from exc
         return {"repo": repo["full_name"], "url": repo["html_url"], "private": True, "next": "call set_project with this URL"}
 
     async def _find_issues(self, words: str) -> dict[str, Any]:
@@ -317,7 +325,7 @@ class Triage:
         async with lock:
             tools = TriageTools(self.github, context, self.start_watcher, self.projects)
             conversation = self.threads.get(context.key)
-            replies: list[str] = []
+            replies: list[str] = []  # what the agent wrote in each round: the last round is its answer
             try:
                 if conversation:
                     response = await self.client.beta.conversations.append_async(conversation_id=conversation, inputs=text)
@@ -325,7 +333,8 @@ class Triage:
                     response = await self.client.beta.conversations.start_async(agent_id=await self.agent_id(), inputs=text, store=True)
                     self.threads.set(context.key, response.conversation_id)
                 for _ in range(MAX_TOOL_ROUNDS):
-                    replies += [_message_text(o.content).strip() for o in response.outputs if isinstance(o, models.MessageOutputEntry)]
+                    said = [_message_text(o.content).strip() for o in response.outputs if isinstance(o, models.MessageOutputEntry)]
+                    replies.append("\n\n".join(words for words in said if words))
                     calls = [o for o in response.outputs if isinstance(o, models.FunctionCallEntry)]
                     if not calls:
                         break
@@ -339,4 +348,5 @@ class Triage:
                 log.exception("triage failed")
                 self.threads.set(context.key, "")
                 return f"Something went wrong: {type(exc).__name__}: {str(exc)[:300]}. Write again and I'll start over."
-            return "\n\n".join(r for r in replies if r) or "Done."
+            # Its words between tool calls, such as "Let me check the project", aren't for the person
+            return next((words for words in reversed(replies) if words), "Done.")

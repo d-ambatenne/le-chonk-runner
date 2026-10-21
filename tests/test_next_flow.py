@@ -305,6 +305,35 @@ async def test_a_reply_also_sent_to_the_channel_is_answered_and_system_messages_
     assert world.mistral.inputs[-1]["inputs"] == "A second tap jumps." and len(world.mistral.inputs) == 2
 
 
+async def test_replies_in_a_thread_are_answered_when_nothing_new_is_in_the_channel(world: SimpleNamespace) -> None:
+    """As on the first real run: the agent asked for criteria, and the answer came in two messages."""
+    thread = world.slack.say(CHANNEL, "Build Le Chonk Runner: an endless runner where Le Chonk jumps over obstacles.")
+    world.mistral.script = [[reply("Which acceptance criteria?")], [reply("Thanks, filing it.")]]
+    first = await watch_slack()
+    world.slack.say(CHANNEL, "1. Yes\n2. Yes\n3. Let's have 5 hearts as health", thread=thread)
+    world.slack.say(CHANNEL, "4. YES\n5. Yes", thread=thread)
+    again = await watch_slack(since=first["threads"][thread]["active"], threads=first["threads"], agents={})
+    assert len(again["answered"]) == 1 and "error" not in again["answered"][0]  # one request, not two
+    assert world.mistral.inputs[-1]["inputs"] == "1. Yes\n2. Yes\n3. Let's have 5 hearts as health\n\n4. YES\n5. Yes"
+    assert mine(world, thread)[-1] == f"{MARK} Thanks, filing it."
+
+
+async def test_a_channel_that_cant_be_read_is_said_once_and_its_return_too(world: SimpleNamespace) -> None:
+    original, failing = world.slack.call_tool, {"left": 9}  # 3 polls: each read is tried 3 times
+
+    async def flaky(tool: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
+        if tool == "slack_read_channel" and failing["left"]:
+            failing["left"] -= 1
+            raise RuntimeError("ratelimited")
+        return await original(tool, arguments)
+
+    world.slack.call_tool = flaky
+    outcome = await watch_slack(max_polls=5)
+    told = [m["text"] for m in world.slack.messages.get(CHANNEL, []) if "thread_ts" not in m and m["text"].startswith(MARK)]
+    assert len(told) == 2 and "I can't read this channel" in told[0] and "ratelimited" in told[0] and "again" in told[1]
+    assert sum(1 for a in outcome["answered"] if "error" in a) == 3
+
+
 async def test_one_thread_that_cant_be_read_doesnt_stop_the_channel(world: SimpleNamespace) -> None:
     broken = world.slack.say(CHANNEL, "first")
     world.mistral.script = [[reply("ok")], [reply("ok too")]]
@@ -345,6 +374,22 @@ async def test_the_agent_creates_the_apps_repo_when_asked_and_watches_it(world: 
     assert made["private"] is True and made["autoInit"] is False and made["name"] == "le-chonk-app"
     assert world.mistral.started[0]["execution_id"] == "le-chonk-tasks-denis-le-chonk-app-a"  # found though the search hasn't indexed it
     assert '"repo": "denis/le-chonk-app"' in world.mistral.inputs[1]["inputs"][0].result
+
+
+async def test_a_repo_github_wont_make_comes_back_as_what_to_do(world: SimpleNamespace) -> None:
+    """As on the first real run: the Mistral GitHub App may not create repositories."""
+    world.fake.refuse_repos = True
+    thread = world.slack.say(CHANNEL, "Create a private repo le-chonk-game for the app, and use it.")
+    world.mistral.script = [
+        [tool_call("t1", "create_repo", {"name": "le-chonk-game"})],
+        [reply("The repo creation failed. Let me check the current project setup."), call("t2", "get_project")],
+        [reply("GitHub won't let me create it. Create le-chonk-game, give the Mistral GitHub App access, and send me its URL.")],
+    ]
+    await watch_slack(repo=None)
+    refused = world.mistral.inputs[1]["inputs"][0].result
+    assert "403" in refused and "github.com/apps/mistralai" in refused and "call set_project" in refused
+    assert mine(world, thread) == [f"{MARK} GitHub won't let me create it. Create le-chonk-game, give the Mistral GitHub App access, "
+                                   "and send me its URL."]  # its words between tool calls aren't posted
 
 
 async def test_a_bad_repo_name_is_refused_before_anything_is_made(world: SimpleNamespace) -> None:

@@ -152,6 +152,13 @@ def test_a_threads_replies_are_read_from_slacks_text() -> None:
     assert alone["text"] == "C'mon"
 
 
+def test_a_channel_with_nothing_new_reads_as_no_messages() -> None:
+    """The usual answer, every minute: the first real run failed on it."""
+    assert parse_messages(json.dumps({"messages": "Channel: #le-chonk (C0EXAMPLE1)\n\n",
+                                      "pagination_info": "There are no more messages available.\n"})) == []
+    assert parse_messages("") == [] and parse_messages("No messages found.") == []
+
+
 def test_slack_messages_are_read_from_json_too() -> None:
     from_json = parse_messages('{"messages": [{"ts": "1800000001.000100", "user": "U1", "text": "hi", "thread_ts": "1800000000.000100"}]}')
     assert from_json[0]["ts"] == "1800000001.000100" and from_json[0]["thread_ts"] == "1800000000.000100" and from_json[0]["text"] == "hi"

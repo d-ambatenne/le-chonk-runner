@@ -389,6 +389,8 @@ SYSTEM_TEXT = re.compile(_WHO + r"(?:has (?:joined|left) the (?:channel|group|co
 def _parse_blocks(text: str) -> list[dict[str, Any]]:
     lines = text.splitlines()
     stamps = [i for i, line in enumerate(lines) if _STAMP.match(line)]
+    if not stamps:  # the usual answer: nothing new in the channel
+        return []
     starts = []  # where each message's header starts
     for k, i in enumerate(stamps):
         j, floor = i, stamps[k - 1] + 1 if k else 0

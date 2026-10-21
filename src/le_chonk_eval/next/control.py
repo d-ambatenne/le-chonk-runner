@@ -37,6 +37,7 @@ slack_connector = connector(SLACK)
 MAX_THREADS = 10  # threads read every poll
 THREAD_DAYS = 2  # a thread stops being read after this long without a message
 THREAD_FAILURES = 3  # a thread that can't be read this many times in a row is dropped
+READ_FAILURES_TOLD = 3  # reads of the channel that fail in a row before the watcher says so in the channel
 RUN_DAYS = 3  # how long to wait for your Mac
 SLOW_POLL_AFTER = timedelta(hours=1)  # then check on the run every ten minutes, so the history stays short
 SLOW_POLL_SECONDS = 600
@@ -101,6 +102,7 @@ class SlackInput(WatcherState):
     since: str | None = None  # the newest top-level message seen; None: from the time the watcher starts
     threads: dict[str, dict[str, Any]] = Field(default_factory=dict)  # thread ts: conversation, newest reply seen, failures
     agents: dict[str, Any] = Field(default_factory=dict)  # the triage agent's id and configuration
+    read_failures: int = 0  # reads of the channel that failed in a row
 
 
 class FindInput(BaseModel):
@@ -154,6 +156,11 @@ class ReadInput(BaseModel):
     channel: str
     since: str
     threads: dict[str, str] = Field(default_factory=dict)  # thread ts: the newest reply seen
+
+
+class TellInput(BaseModel):
+    channel: str
+    text: str
 
 
 class TriageInput(BaseModel):
@@ -295,8 +302,22 @@ async def read_slack(params: ReadInput) -> dict[str, Any]:
     # Slack's text doesn't say which channel messages are replies also sent to the channel: their thread has them
     messages = [m for m in messages if m["thread"] != m["ts"] or m["ts"] not in replies_read]
     messages.sort(key=lambda m: float(m["ts"]))
+    merged: list[dict[str, Any]] = []
+    for message in messages:  # one answer written as several messages in a thread is one request
+        last = merged[-1] if merged else None
+        if last and last["thread"] == message["thread"] != message["ts"] and last.get("user") == message.get("user"):
+            last.update(ts=message["ts"], text=f"{last.get('text') or ''}\n\n{message.get('text') or ''}".strip())
+        else:
+            merged.append(dict(message))
+    messages = merged
     return {"since": since, "seen": seen, "failed": failed,
             "messages": [{k: m.get(k) for k in ("thread", "ts", "user", "text")} for m in messages]}
+
+
+@workflows.activity(start_to_close_timeout=timedelta(minutes=2), retry_policy_max_attempts=3)
+async def tell_channel(params: TellInput) -> None:
+    """A message to the whole channel, such as that the watcher can't read it."""
+    await make_notifier().post(params.channel, None, params.text)
 
 
 @workflows.activity(start_to_close_timeout=timedelta(minutes=10), retry_policy_max_attempts=2)
@@ -470,7 +491,15 @@ class SlackWatcher:
                                                   threads={t: s["seen"] for t, s in params.threads.items()}))
             except Exception as exc:  # Slack down, a sign-in expired: try again later
                 answered.append({"error": _error(exc)})
+                params.read_failures += 1
+                if params.read_failures == READ_FAILURES_TOLD:  # once, not every minute
+                    await self.tell(params.channel, f"I can't read this channel, so I don't answer here for now: {_error(exc)[:300]}. "
+                                                    "I keep trying every minute.")
                 read = {"since": params.since, "seen": {}, "failed": [], "messages": []}
+            else:
+                if params.read_failures >= READ_FAILURES_TOLD:
+                    await self.tell(params.channel, "I can read this channel again. Write again what I missed.")
+                params.read_failures = 0
             params.since = read["since"]
             for thread, state in params.threads.items():
                 if thread in read["seen"]:
@@ -500,6 +529,13 @@ class SlackWatcher:
                 if successor:
                     return {"channel": params.channel, "handed_over": successor, "answered": answered}
             await _sleep(params.poll_seconds)
+
+    @staticmethod
+    async def tell(channel: str, text: str) -> None:
+        try:
+            await tell_channel(TellInput(channel=channel, text=text))
+        except Exception:  # the channel can't be written to either: the run's history keeps the errors
+            pass
 
     @staticmethod
     def forget_threads(params: SlackInput) -> None:

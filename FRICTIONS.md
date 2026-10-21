@@ -19,7 +19,7 @@ October 2026 (Harbor 0.24.0, mistralai-workflows 3.16.0, mistralai 2.10.1). Add 
 | 5 | Harbor has no agent for Studio agents (Agents API) | `studio_agent.py` adapts a Studio agent to Harbor | Harbor `agents/` |
 | 6 | Harbor and Workflows have no integration | Each arm is an activity that runs the `harbor` CLI as a subprocess, as with ZenML | — |
 | 7 | Harbor owns the agent loop, so Workflows sees jobs, not model calls | Workflows' durable agents aren't used; each trial is still a conversation in Studio | Workflows durable agents docs |
-| 8 | Managed deployments run your worker as a Linux container from a public GitHub repo, with no Docker inside | The worker stays on your Mac. A Harbor cloud sandbox (`-e daytona` or `-e modal`) would let the worker move to Mistral's cloud | [Managed deployments](https://docs.mistral.ai/studio/workflows/managing-workflows-in-production/managed-deployments/getting-started), `harbor run --help` |
+| 8 | Managed deployments run your worker as a Linux container built from a GitHub repo, public or private, with no Docker inside | The worker stays on your Mac. A Harbor cloud sandbox (`-e daytona` or `-e modal`) would let the worker move to Mistral's cloud | [Managed deployments](https://docs.mistral.ai/studio/workflows/managing-workflows-in-production/managed-deployments/getting-started), `harbor run --help` |
 
 ## Studio
 
@@ -58,6 +58,9 @@ October 2026 (Harbor 0.24.0, mistralai-workflows 3.16.0, mistralai 2.10.1). Add 
 | 29 | A connector tool's error raises a non-retryable error that only says "connector tool call failed" | The clients turn it into an error with the tool's own text and status, so a 404 reads as missing and activities retry the rest | SDK `plugins/mistralai/connectors/activities.py` |
 | 30 | A workflow's dict result is stored as `{"result": ...}` (assumption: the API returns it that way) | Results read through the API are unwrapped | SDK `core/definition/validation/_parameter_conversion.py` |
 | 31 | Slack's read tools answer with text written for a model: messages as `===` blocks inside a JSON string, without the subtypes and thread fields Slack's API has | le-chonk-slack parses the text: a message by its `Message TS:` line, system messages by their words, and a reply also sent to the channel by its thread | `scripts/check_next.py --channel` samples |
+| 32 | The GitHub connector has a `create_repository` tool, but GitHub refuses it (403, "Resource not accessible by integration"): the Mistral GitHub App doesn't ask for the Administration permission, which creating a repository needs. Installing it on more repositories doesn't change that | You create the app's repo on GitHub and give the App access to it; asked for a new repo, the agent says so | First run of le-chonk-slack; the App's permissions: `GET https://api.github.com/apps/mistralai` |
+| 33 | Slack shows what Studio's Slack connector sends as "Sent using Mistral Vibe": the Slack app behind the connector carries Vibe's name, whichever Mistral product sends | A Studio agent's replies read as Vibe's; only the 🤖 mark at their start tells them apart from yours | First run of le-chonk-slack |
+| 34 | The Mistral GitHub App subscribes to issue, comment, pull request and push events, but a workflow can't start on them | le-chonk-tasks reads the issues every minute to find `vibe:ready` ones | `GET https://api.github.com/apps/mistralai` (its events); [scheduling](https://docs.mistral.ai/studio/workflows/building-workflows/scheduling) |
 
 ## Your observations
 

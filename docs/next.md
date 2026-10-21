@@ -36,9 +36,11 @@ Use the same Slack workspace and GitHub account as for the demo.
 
 1. Start the channel's watcher: `uv run le-chonk next start --channel le-chonk --smoke`. It runs on your behalf,
    with your connectors, because `start` uses your API key.
-2. In the channel, ask for the app's repo: `Create a private repo le-chonk-game for the app, and use it.` The agent
-   creates it, empty, and starts watching its issues. With an existing repo, give its URL instead, or start with
-   `--repo https://github.com/<you>/le-chonk-game`, which also colors its labels.
+2. Create the app's repo on GitHub, empty and private, such as `le-chonk-game`, and give the Mistral GitHub App
+   access to it (github.com/apps/mistralai › Configure). The connector can't create repos: GitHub refuses the App
+   ([friction 32](../FRICTIONS.md#the-demo)). Then, in the channel: `Use https://github.com/<you>/le-chonk-game`. The
+   agent starts watching its issues. Or start with `--repo https://github.com/<you>/le-chonk-game`, which also
+   colors its labels.
 3. Make a fine-grained GitHub token for that repo only, with Contents, Issues and Pull requests: read and write.
    Put it in `.env` as `GITHUB_TOKEN`: your Mac clones, pushes and releases with it.
 4. Start your Mac's worker, and keep it running: `uv run le-chonk next worker`.
@@ -48,7 +50,7 @@ Use the same Slack workspace and GitHub account as for the demo.
 For real runs, stop the watchers and start them again without it.
 
 In the channel, write as in the demo, without mentioning the app: `build Le Chonk Runner: …`, `add the skill
-<link> to #2`, `run an A/B on #2 with 3 runs per arm`, `queue #2 again`, and `create a private repo <name>`.
+<link> to #2`, `run an A/B on #2 with 3 runs per arm`, and `queue #2 again`.
 Answers come within a minute: the watcher reads the channel every minute (`--poll`).
 
 ## What happens where
@@ -76,4 +78,6 @@ other one with its state and stops ([friction 27](../FRICTIONS.md#the-demo)).
   that the results come back as the code reads them.
 - The first build of the managed deployment's image.
 
-If something fails, the demo still runs the same flow from your Mac: `uv run le-chonk demo`.
+If something fails, `uv run python scripts/status_next.py` shows the latest runs of the four workflows: their steps, which
+failed and why, and their warnings. It saves them to `runs/status/`. A watcher that can't read the channel three
+times in a row says so in the channel. The demo still runs the same flow from your Mac: `uv run le-chonk demo`.
