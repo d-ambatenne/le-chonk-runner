@@ -114,6 +114,11 @@ class GitHub:
     async def issue(self, repo: str, number: int) -> dict[str, Any]:
         return await self.request("GET", f"/repos/{repo}/issues/{number}")
 
+    async def comments(self, repo: str, number: int, last: int = 3) -> list[str]:
+        """The issue's latest comments, oldest first."""
+        found = await self.request("GET", f"/repos/{repo}/issues/{number}/comments", params={"per_page": 100})
+        return [str(c.get("body") or "") for c in found if isinstance(c, dict)][-last:]
+
     async def create_issue(self, repo: str, title: str, body: str, labels: list[str]) -> dict[str, Any]:
         return await self.request("POST", f"/repos/{repo}/issues", json={"title": title, "body": body, "labels": labels})
 

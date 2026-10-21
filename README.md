@@ -33,6 +33,8 @@ src/le_chonk_eval/
 demo/                         the demo's task checklist and Slack app manifest
 deploy/control/Dockerfile     the next phase's managed deployment, le-chonk-control
 scripts/check_next.py         what your Mistral account has for the next phase: a read-only check
+scripts/status_next.py        the next phase's latest runs: their steps, failures and warnings
+scripts/redeploy_next.py      ships a change: stops the watchers, pushes, rebuilds le-chonk-control, starts again
 docs/skill-evaluation.md      the skill's published A/B, moved out of the skill folder
 docs/demo.md                  the demo: setup and use
 docs/architecture.md          what runs where, now and in the next phase, with diagrams

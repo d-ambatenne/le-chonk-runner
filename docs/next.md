@@ -28,9 +28,14 @@ Use the same Slack workspace and GitHub account as for the demo.
    - hardened, the default: its workflows run on behalf of whoever starts them
    - no secrets: it uses your connectors
 
-   Wait until it's Active. After a change to the code: push, restart the deployment, then stop and start the
-   watchers, since a running execution keeps the code it started with.
+   Wait until it's Active.
 6. **`.env`** on your Mac: `MISTRAL_API_KEY`. No Slack tokens; the GitHub token comes once the app's repo exists.
+   For the script below, also `LECHONK_CHANNEL` and `LECHONK_REPO`: the channel's name and the app repo's URL.
+
+After a change to the code, everything restarts, since a running execution keeps the code it started with:
+`uv run python scripts/redeploy_next.py` stops the watchers, commits and pushes, restarts the deployment and waits
+until it runs the new commit, stops your Mac's worker, starts the watchers again, and runs the worker in its terminal.
+Add `--smoke` for a smoke test, `--queue 3` to queue issue #3 again, and `-m "…"` for the commit message.
 
 ## Run
 

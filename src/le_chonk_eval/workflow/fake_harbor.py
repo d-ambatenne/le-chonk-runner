@@ -76,8 +76,15 @@ def _write_trial(job_dir: Path, job_name: str, task: str, model: str, skills: li
     else:
         (trial_dir / "artifacts" / "project" / "shared" / "src" / "Game.kt").write_text("@Composable\nfun Game() {}\n")
     (trial_dir / "verifier" / "reward.json").write_text(json.dumps(rewards))
+    commands, log = {}, ""  # as the real verifier writes them: each build in details.json, its output in build.log
+    for check, name, command, error in (("android_apk", "android", "./kotlin build -m androidApp", "e: Game.kt:12:5 Unresolved reference: Hearts"),
+                                        ("shared_tests_pass", "tests", "./kotlin test -m shared", "GameTest > hitCostsAHeart FAILED")):
+        code = 0 if passed[check] else 1
+        commands[name] = {"command": command, "exit_code": code, "seconds": 42.0, "timed_out": False}
+        log += f"\n$ {command}\n[exit {code}, 42.0s, timed out: False]\n" + ("BUILD SUCCESSFUL\n" if code == 0 else f"> Task :compile\n{error}\nBUILD FAILED\n")
+    (trial_dir / "verifier" / "build.log").write_text(log)
     (trial_dir / "verifier" / "details.json").write_text(json.dumps({
-        "reward": rewards["reward"], "assertions": passed, "environment_errors": [], "apk": apk,
+        "reward": rewards["reward"], "assertions": passed, "commands": commands, "environment_errors": [], "apk": apk,
         "environment": {"kotlin_toolchain": "fake 0.0", "warmup": "ok (fake)"},
     }))
     (trial_dir / "agent" / "trajectory.json").write_text(json.dumps(_trajectory(skill)))

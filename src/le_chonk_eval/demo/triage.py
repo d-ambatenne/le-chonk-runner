@@ -50,6 +50,7 @@ When the person asks for a new repository, call create_repo with the name they g
 - An A/B for a task: mark_for_ab. It needs a skill on the issue, and runs {ab_attempts} times per arm unless asked otherwise.
 - Implement a task again, or after an A/B: queue_issue.
 - Questions about tasks: get_issue or find_issues.
+- Why a run failed: get_issue. Its latest comments say which checks failed, how the build ended, and Vibe's last message. Explain it in two or three lines, and queue the issue again only when the person asks.
 
 ## Style
 Short Slack messages in plain text, without headings. Always give issue links. If a tool fails, say what failed in one line.
@@ -88,7 +89,8 @@ TOOLS = [
         "skills": {"type": "array", "items": {"type": "string"}, "description": "Skill folder links given with the request"},
         "hold": {"type": "boolean", "description": "True to create it without queueing it for Vibe yet"},
     }, ["title", "goal", "acceptance_criteria"]),
-    _tool("get_issue", "Read one issue: its task, labels and state.", {"number": {"type": "integer"}}, ["number"]),
+    _tool("get_issue", "Read one issue: its task, labels, state and latest comments, such as why Vibe's last run failed.",
+          {"number": {"type": "integer"}}, ["number"]),
     _tool("add_skill", "Attach a skill to an issue, for its implementation and A/B.", {
         "number": {"type": "integer"},
         "url": {"type": "string", "description": "https://github.com/<owner>/<repo>/tree/<branch>/<folder with SKILL.md>"},
@@ -255,7 +257,9 @@ class TriageTools:
     async def _get_issue(self, number: int) -> dict[str, Any]:
         issue = await self.github.issue(self._repo(), int(number))
         task = Task.from_issue(issue["title"], issue.get("body"))
-        return {**_issue_summary(issue), "acceptance_criteria": task.criteria, "skills": task.skills, "ab_attempts": task.ab_attempts}
+        comments = await self.github.comments(self._repo(), int(number))  # why the last run failed is there
+        return {**_issue_summary(issue), "acceptance_criteria": task.criteria, "skills": task.skills, "ab_attempts": task.ab_attempts,
+                "latest_comments": [c[:3000] for c in comments]}
 
     async def _add_skill(self, number: int, url: str) -> dict[str, Any]:
         repo = self._repo()

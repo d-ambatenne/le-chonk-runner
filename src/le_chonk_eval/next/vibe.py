@@ -45,6 +45,7 @@ class ReleaseInput(BaseModel):
     branch: str
     jobs: list[str]
     errors: list[str] = Field(default_factory=list)
+    smoke: bool = False
 
 
 @workflows.activity(start_to_close_timeout=timedelta(minutes=30), retry_policy_max_attempts=3)
@@ -78,7 +79,7 @@ async def release_vibe_run(params: ReleaseInput) -> dict[str, Any]:
 
     Safe to retry: the clone goes back to the base commit first, the branch is force-pushed, the release is reused."""
     from ..demo.github import commit_all, head, push, reset_to, sync_tree
-    from ..demo.publish import APK_TYPE, _apk, _facts, _why_not_merged
+    from ..demo.publish import APK_TYPE, _apk, _facts, _why_not_merged, explain_failure
     from ..utils.results import read_job
 
     runs = read_job(jobs_dir() / params.jobs[0])
@@ -87,10 +88,11 @@ async def release_vibe_run(params: ReleaseInput) -> dict[str, Any]:
     run = runs[0]
     checks = run.get("assertions") or {}
     project = Path(run["project_dir"]) if run.get("project_dir") else None
-    result: dict[str, Any] = {"ok": True, "run_id": params.run_id, "base": params.base, "base_branch": params.branch, "facts": _facts(run),
+    facts = ("a smoke test, so no Vibe ran and these are made up: " if params.smoke else "") + _facts(run)
+    result: dict[str, Any] = {"ok": True, "run_id": params.run_id, "base": params.base, "base_branch": params.branch, "facts": facts,
                               "assertions": checks, "reward": run.get("reward"), "cost_usd": run.get("cost_usd")}
     if not (checks.get("android_apk") and checks.get("shared_tests_pass") and project and project.is_dir()):
-        return {**result, "passed": False, "reason": _why_not_merged(run)}
+        return {**result, "passed": False, "reason": _why_not_merged(run), "failure": explain_failure(run)}
 
     clone = runs_dir() / params.run_id / "repo"
     branch = f"vibe/{params.run_id}"
@@ -154,11 +156,12 @@ class VibeRun:
             job = HarborJobInput(
                 ab_id=params.run_id, arm="skill" if prepared["skills"] else "no-skill", model=prepared["model"], attempts=1,
                 max_cost_usd=prepared["max_cost_usd"], agent_env=prepared["agent_env"], smoke=params.smoke, task=prepared["task_dir"],
-                agent=VIBE, skills=prepared["skills"], job=params.run_id,
+                agent=VIBE, skills=prepared["skills"], job=params.run_id, fake_pass=1.0,  # a smoke run goes all the way
             )
             await run_harbor_job(job)
             result = await release_vibe_run(ReleaseInput(repo=params.repo, number=params.number, run_id=params.run_id,
-                                                         base=prepared["base"], branch=prepared["branch"], jobs=[job.job_name]))
+                                                         base=prepared["base"], branch=prepared["branch"], jobs=[job.job_name],
+                                                         smoke=params.smoke))
             return {**result, "model": prepared["model"], "note": prepared["note"]}
         except Exception as exc:
             return {"ok": False, "error": _error(exc)}
@@ -191,7 +194,7 @@ class VibeAb:
             names = [job.job_name for job in jobs]
             await judge_issue_jobs(JudgeInput(repo=params.repo, number=params.number, run_id=params.run_id, jobs=names, smoke=params.smoke))
             result = await release_vibe_ab(ReleaseInput(repo=params.repo, number=params.number, run_id=params.run_id, base=prepared["base"],
-                                                        branch=prepared["branch"], jobs=names, errors=errors))
+                                                        branch=prepared["branch"], jobs=names, errors=errors, smoke=params.smoke))
             return {**result, "model": prepared["model"], "note": prepared["note"]}
         except Exception as exc:
             return {"ok": False, "error": _error(exc)}

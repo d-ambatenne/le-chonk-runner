@@ -82,6 +82,8 @@ class FakeGitHub:
             ("POST", repo + r"/issues/(?P<n>\d+)/labels", self._add_labels),
             ("DELETE", repo + r"/issues/(?P<n>\d+)/labels/(?P<name>.+)", self._remove_label),
             ("POST", repo + r"/issues/(?P<n>\d+)/comments", self._comment),
+            ("GET", repo + r"/issues/(?P<n>\d+)/comments",
+             lambda r, b, repo, n: httpx.Response(200, json=[{"body": c} for c in self.comments.get((repo, int(n)), [])])),
             ("GET", repo + r"/labels", lambda r, b, repo: httpx.Response(200, json=list(self.labels[repo].values()))),
             ("POST", repo + r"/labels", self._create_label),
             ("GET", repo + r"/contents/(?P<path>.+)", self._contents),

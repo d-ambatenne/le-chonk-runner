@@ -76,6 +76,7 @@ class HarborJobInput(BaseModel):
     skills: list[str] | None = None
     agent_env: list[str] = Field(default_factory=list)
     job: str | None = None
+    fake_pass: float | None = None  # a smoke run's chance to pass each check; None: the fake A/B's own rates
 
     @property
     def job_name(self) -> str:
@@ -112,9 +113,11 @@ async def run_harbor_job(params: HarborJobInput) -> dict[str, Any]:
     with log_path.open("ab") as log:
         log.write(f"\n$ {shlex.join(command)}\n".encode())
         log.flush()
+        env = {**os.environ, "NO_COLOR": "1", "TERM": "dumb"}
+        if params.smoke and params.fake_pass is not None:
+            env.setdefault("LECHONK_FAKE_PASS", str(params.fake_pass))
         process = await asyncio.create_subprocess_exec(
-            *command, cwd=project_root(), stdout=log, stderr=asyncio.subprocess.STDOUT,
-            env={**os.environ, "NO_COLOR": "1", "TERM": "dumb"}, start_new_session=True,
+            *command, cwd=project_root(), stdout=log, stderr=asyncio.subprocess.STDOUT, env=env, start_new_session=True,
         )
         try:
             while True:

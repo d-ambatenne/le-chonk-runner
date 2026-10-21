@@ -310,7 +310,7 @@ class IssueRun:
             job = HarborJobInput(
                 ab_id=params.run_id, arm="skill" if prepared["skills"] else "no-skill", model=prepared["model"], attempts=1,
                 max_cost_usd=prepared["max_cost_usd"], agent_env=prepared["agent_env"], smoke=params.smoke, task=prepared["task_dir"],
-                agent=VIBE, skills=prepared["skills"], job=params.run_id,
+                agent=VIBE, skills=prepared["skills"], job=params.run_id, fake_pass=1.0,  # a smoke run goes all the way
             )
             await run_harbor_job(job)
             await judge_issue_jobs(JudgeInput(repo=params.repo, number=params.number, run_id=params.run_id, jobs=[job.job_name], smoke=params.smoke))

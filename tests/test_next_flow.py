@@ -176,7 +176,35 @@ async def test_a_change_that_doesnt_build_is_not_merged(world: SimpleNamespace, 
     outcome = await run_tasks()
     assert outcome["handled"][0]["result"] == {"merged": False, "reason": "the Android APK didn't build"}
     assert labels(issue) == {FAILED} and not world.fake.pulls[REPO] and not world.fake.releases[REPO]
-    assert "nothing merged" in mine(world, thread)[-1]
+    said = mine(world, thread)[-1]
+    assert "nothing merged" in said and "`e: Game.kt:12:5 Unresolved reference: Hearts`" in said and "Details on the issue." in said
+    why = world.fake.comments[(REPO, 1)][-1]  # the why is on the issue, where the triage agent reads it
+    assert "- Failed: the Android build, `./kotlin build -m androidApp`: exit 1" in why and "- Failed: the shared tests" in why
+    assert "Unresolved reference: Hearts\nBUILD FAILED" in why and "GameTest > hitCostsAHeart FAILED" in why and "Its last message: \"Done.\"" in why
+
+
+async def test_the_agent_reads_why_a_run_failed(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("LECHONK_FAKE_PASS", "0")
+    thread = world.slack.say(CHANNEL, "the request")
+    add_issue(world.fake, READY, thread=thread)
+    await run_tasks()
+    world.slack.say(CHANNEL, "What is the problem?", thread=thread)
+    world.mistral.script = [[call("t1", "get_issue", number=1)], [reply("The Android build failed: Hearts is unresolved.")]]
+    await watch_slack(since="1700000000.000000", threads={thread: {"conversation": None, "seen": thread, "active": thread}}, agents={})
+    read = world.mistral.inputs[-1]["inputs"][0].result
+    assert "latest_comments" in read and "Unresolved reference: Hearts" in read
+    assert world.mistral.started[-1]["workflow_identifier"] == "le-chonk-vibe-run"  # it explained; it didn't queue it again
+
+
+async def test_a_smoke_run_goes_all_the_way_and_says_it_is_one(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fake harbor fails most single runs on its own: a smoke test is meant to try the merge and the release."""
+    monkeypatch.delenv("LECHONK_FAKE_PASS")
+    thread = world.slack.say(CHANNEL, "the request")
+    issue = add_issue(world.fake, READY, thread=thread)
+    outcome = await run_tasks()
+    assert outcome["handled"][0]["result"]["merged"] and labels(issue) == {DONE}
+    assert "(a smoke test: no Vibe, made-up results)" in mine(world, thread)[0]
+    assert "a smoke test, so no Vibe ran and these are made up: $" in mine(world, thread)[-1]
 
 
 async def test_a_broken_run_on_the_mac_frees_the_issue(world: SimpleNamespace, monkeypatch: pytest.MonkeyPatch) -> None:

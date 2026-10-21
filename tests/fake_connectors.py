@@ -68,6 +68,8 @@ class FakeGitHubConnector:
                      "totalCount": len(issues)})
 
     def _issue_read(self, method: str, owner: str, repo: str, issue_number: int, **_: Any) -> dict[str, Any]:
+        if method == "get_comments":
+            return text(self._rest("GET", f"/repos/{owner}/{repo}/issues/{issue_number}/comments"))
         return text(self._rest("GET", f"/repos/{owner}/{repo}/issues/{issue_number}"))
 
     def _issue_write(self, method: str, owner: str, repo: str, issue_number: int | None = None, **fields: Any) -> dict[str, Any]:

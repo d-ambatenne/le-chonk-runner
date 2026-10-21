@@ -11,7 +11,7 @@ from typing import Any
 
 from ..demo.issues import AB_DONE, AB_RUNNING, DONE, FAILED, NOT_DONE, RUNNING, Task
 from ..demo.judge import MAX_DIFF_CHARS, judge
-from ..demo.publish import _judge_md
+from ..demo.publish import _judge_md, failure_line, failure_markdown
 from .connectors import ConnectorGitHub, ConnectorNotifier, diff_summary
 
 
@@ -29,11 +29,12 @@ async def merge_run(github: ConnectorGitHub, notifier: ConnectorNotifier, judge_
     facts = result.get("facts") or ""
     note = f" {result['note']}" if result.get("note") else ""
     if not result.get("passed"):
-        why = result.get("reason") or "the checks failed"
+        why, failure = result.get("reason") or "the checks failed", result.get("failure")
         await github.comment(repo, number, f"Vibe's run `{run_id}`: {why}, so nothing was merged. {facts}.{note}\n\n"
-                                           "Ask the triage agent in Slack to queue it again.")
+                                           f"{failure_markdown(failure)}\n\nAsk the triage agent in Slack to queue it again.")
         await github.relabel(repo, number, add=[FAILED], remove=[RUNNING])
-        await notifier.post(task.slack_channel, task.slack_thread, f"#{number} {task.title}: {why}, nothing merged. {facts}.")
+        await notifier.post(task.slack_channel, task.slack_thread, f"#{number} {task.title}: {why}, nothing merged. {facts}. "
+                                                                   f"{failure_line(failure)}".strip())
         return {"merged": False, "reason": why}
     if not result.get("changed"):
         await github.comment(repo, number, f"Vibe's run `{run_id}` changed nothing. {facts}.")

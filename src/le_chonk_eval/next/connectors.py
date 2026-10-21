@@ -266,6 +266,12 @@ class ConnectorGitHub:
         owner, name = self._split(repo)
         return normalize_issue(await self.call_json("issue_read", method="get", owner=owner, repo=name, issue_number=int(number)), repo)
 
+    async def comments(self, repo: str, number: int, last: int = 3) -> list[str]:
+        """The issue's latest comments, oldest first."""
+        owner, name = self._split(repo)
+        data = await self.call_json("issue_read", method="get_comments", owner=owner, repo=name, issue_number=int(number), perPage=100)
+        return [str(c.get("body") or "") for c in _items(data, "comments", "items")][-last:]
+
     async def create_issue(self, repo: str, title: str, body: str, labels: list[str]) -> dict[str, Any]:
         owner, name = self._split(repo)
         data = await self.call_json("issue_write", method="create", owner=owner, repo=name, title=title, body=body, labels=labels or None)

@@ -116,6 +116,7 @@ class ClaimInput(BaseModel):
     run_id: str
     model: str = DEFAULT_MODEL
     ab_attempts: int = 3
+    smoke: bool = False
 
 
 class StartInput(BaseModel):
@@ -218,8 +219,9 @@ async def claim_task(params: ClaimInput) -> dict[str, Any]:
     model = task.model or params.model
     what = (f"the skill A/B, {task.ab_attempts or params.ab_attempts} runs per arm" if params.kind == "ab"
             else "the implementation" + (f" with {len(task.skills)} skill(s)" if task.skills else ""))
-    await github.comment(params.repo, params.number, f"Started {what}: run `{params.run_id}`, Vibe on {model}, on your Mac.")
-    await make_notifier().post(task.slack_channel, task.slack_thread, f"Started {what} of #{params.number} {task.title} (Vibe on {model}).")
+    how = "a smoke test: no Vibe, made-up results" if params.smoke else f"Vibe on {model}"
+    await github.comment(params.repo, params.number, f"Started {what}: run `{params.run_id}`, {how}, on your Mac.")
+    await make_notifier().post(task.slack_channel, task.slack_thread, f"Started {what} of #{params.number} {task.title} ({how}).")
     return {"model": model, "title": task.title}
 
 
@@ -422,7 +424,7 @@ class TasksWatcher:
         started = False
         try:
             claimed = await claim_task(ClaimInput(repo=params.repo, number=number, kind=kind, run_id=run_id, model=params.model,
-                                                  ab_attempts=params.ab_attempts))
+                                                  ab_attempts=params.ab_attempts, smoke=params.smoke))
             run = {"repo": params.repo, "number": number, "run_id": run_id, "model": claimed["model"], "max_cost_usd": params.max_cost_usd,
                    "ab_attempts": params.ab_attempts, "smoke": params.smoke}
             await start_vibe(StartInput(kind=kind, execution_id=execution, deployment=params.vibe_deployment, params=run))
