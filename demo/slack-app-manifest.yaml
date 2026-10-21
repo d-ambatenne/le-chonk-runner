@@ -1,0 +1,36 @@
+# The demo's Slack app. In api.slack.com/apps: Create New App > From a manifest > paste this file.
+# Socket Mode: the app connects out from your Mac, so it needs no public URL.
+display_information:
+  name: Le Chonk
+  description: Turns requests into GitHub issues that Vibe implements (le-chonk demo)
+  background_color: "#2c2d30"
+features:
+  app_home:
+    home_tab_enabled: false
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
+  bot_user:
+    display_name: Le Chonk
+    always_online: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - chat:write
+      - channels:history
+      - groups:history
+      - im:history
+      - reactions:write
+      - files:write
+settings:
+  event_subscriptions:
+    bot_events:
+      - app_mention
+      - message.channels
+      - message.groups
+      - message.im
+  interactivity:
+    is_enabled: false
+  org_deploy_enabled: false
+  socket_mode_enabled: true
+  token_rotation_enabled: false

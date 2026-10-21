@@ -1,0 +1,68 @@
+"""An issue as a Harbor task: the A/B task's machine and verifier, with the repo in /app and the issue as the prompt.
+
+runs/<run id>/task/
+    task.toml          the A/B task's resources and timeouts, renamed for the issue
+    instruction.md     the issue, and how to work in the container
+    environment/       the A/B task's Dockerfile and warm-up, plus the repo at its base commit, copied to /app
+    tests/             the A/B task's verifier, which here also keeps the APK it builds
+"""
+
+from __future__ import annotations
+
+import re
+import shutil
+from pathlib import Path
+
+from ..utils.paths import task_dir
+from .github import EXCLUDED
+from .issues import Task
+
+INSTRUCTION = """# {title}
+
+This is issue #{number} of {url}. {where}
+
+{brief}
+
+## How to work
+
+- The project is a Kotlin Multiplatform app built with the Kotlin Toolchain (JetBrains' `kotlin` command-line tool), not with Gradle or Maven. The `kotlin` command is installed.
+- This machine runs Linux, so it can't build or run the iOS app: keep the iOS app's setup correct, and check your work by building the Android app and running the tests.
+- Leave your changes in /app and don't commit them: the pipeline commits them after its own checks.
+
+When you are done, reply with a short summary of what you changed.
+"""
+
+REPO_IN_IMAGE = """
+# The repository at the issue's base commit, with its history, so the agent starts from the current code.
+COPY repo/ /app/
+"""
+
+
+def instruction(repo: str, number: int, task: Task, empty: bool) -> str:
+    where = ("The repository is empty: create the project in /app, the current directory." if empty
+             else "The repository is checked out in /app, the current directory.")
+    return INSTRUCTION.format(title=task.title, number=number, url=f"https://github.com/{repo}", where=where, brief=task.brief())
+
+
+def build_task(repo: str, number: int, task: Task, clone_dir: Path, out: Path, empty: bool) -> Path:
+    template = task_dir()
+    if out.exists():
+        shutil.rmtree(out)
+    out.mkdir(parents=True)
+    shutil.copytree(template / "environment", out / "environment")
+    shutil.copytree(template / "tests", out / "tests")
+    shutil.copytree(clone_dir, out / "environment" / "repo", ignore=shutil.ignore_patterns(*[n for n in EXCLUDED if n != ".git"], "*.apk"))
+
+    with (out / "environment" / "Dockerfile").open("a", encoding="utf-8") as handle:
+        handle.write(REPO_IN_IMAGE)
+    test_sh = out / "tests" / "test.sh"
+    test_sh.write_text(test_sh.read_text().replace("--out /logs/verifier", "--out /logs/verifier --keep-apk"))
+
+    owner, name = repo.split("/", 1)
+    config = (template / "task.toml").read_text()
+    config = re.sub(r'(?m)^name = ".*"$', f'name = "{owner}/{name}-issue-{number}"', config, count=1)
+    description = task.title.replace("\\", "").replace('"', "'")
+    config = re.sub(r'(?m)^description = ".*"$', f'description = "Issue #{number} of {repo}: {description}"', config, count=1)
+    (out / "task.toml").write_text(config)
+    (out / "instruction.md").write_text(instruction(repo, number, task, empty), encoding="utf-8")
+    return out

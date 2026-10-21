@@ -1,0 +1,35 @@
+[project]
+name = "le-chonk-eval"
+version = "0.2.0"
+description = "Kotlin Toolchain skill A/B: one Harbor task, run with a Mistral Studio agent, locally or as a Mistral Workflows pipeline"
+readme = "README.md"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+    # Pinned: the task and the Studio agent use Harbor's agent and result APIs of this version.
+    "harbor==0.24.0",
+    "mistralai-workflows[mistralai]==3.16.0",
+    "mistralai==2.10.1",
+    "pyyaml>=6.0",
+    "python-dotenv>=1.0",
+    # The demo: the Slack bot (Socket Mode) and the GitHub API.
+    "slack-bolt>=1.30",
+    "httpx>=0.27",
+]
+
+[project.scripts]
+le-chonk = "le_chonk_eval.cli:main"
+le-chonk-worker = "le_chonk_eval.workflow.pipeline:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "pytest-asyncio>=0.24"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/le_chonk_eval"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

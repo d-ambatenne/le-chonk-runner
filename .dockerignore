@@ -1,0 +1,12 @@
+# For deploy/control/Dockerfile, built from the repo's root. The Harbor task builds from its own folder.
+.env
+.git
+.venv
+.state
+.idea
+.pytest_cache
+**/__pycache__
+jobs
+results
+runs
+chat
