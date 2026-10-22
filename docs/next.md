@@ -77,11 +77,65 @@ A run in progress is stopped on your Mac too, and its issue is freed, so you can
 In Studio, a watcher shows as `le-chonk-slack-<channel>-a` or `-b`: when its history grows long, it starts the
 other one with its state and stops ([friction 27](../FRICTIONS.md#the-demo)).
 
+## QA: an agent checks the app
+
+An agent installs a release's APK on an emulator and checks it against the issue's acceptance criteria. It sees
+the criteria and the running app, never the code. Each criterion gets pass, fail or can't check. A check read
+from the screen's UI tree would block a merge; one judged from a screenshot wouldn't. For a tree check, the agent
+writes a Maestro flow: later runs replay the flows, and the agent explores only criteria without one, or whose flow
+failed. A new flow is replayed before it's kept; when that fails, the agent gets the reason and may fix the flow twice. For now QA only reports: it files no issues and holds no merge.
+
+Set up once, on your Mac:
+
+1. **The Android SDK's tools**, from Android Studio. QA finds the SDK in `~/Library/Android/sdk`, or in `ANDROID_HOME`.
+2. **The emulator lechonk-qa:**
+
+   ```
+   sdkmanager "system-images;android-35;google_apis;arm64-v8a"
+   avdmanager create avd -n lechonk-qa -k "system-images;android-35;google_apis;arm64-v8a" -d pixel_7
+   ```
+
+   QA boots it headless on port 5580, so it never meets the emulator you use by hand. Its first boot is cold and
+   saves a clean snapshot, `qa-clean`; later runs start from it and never save over it.
+3. **Maestro**, which needs Java 17 or newer: `curl -fsSL "https://get.maestro.mobile.dev" | bash`, then a new
+   terminal so it's on your PATH, or `LECHONK_MAESTRO` in `.env`.
+4. **The screenshot check.** A tool's result is text only, so screenshots reach the model as an image beside it
+   ([friction 35](../FRICTIONS.md#the-demo)). Check that the model reads them, with a screenshot of the game:
+
+   ```
+   uv run python scripts/check_screenshot.py --image <screenshot.png> --expect-hearts 5
+   uv run python scripts/check_screenshot.py --serial emulator-5554 --expect-hearts 5
+   ```
+
+   The second takes the screenshot from the emulator you run by hand. PASS: QA can see. FAIL or a refusal:
+   `tool_inputs()` in `src/le_chonk_eval/qa/agent.py` needs another way, before anything else.
+
+Run QA on a release:
+
+```
+uv run le-chonk qa run --repo https://github.com/<you>/le-chonk-game --issue 1 --release issue-1-20261021-202046
+```
+
+`--serial emulator-5554` uses an emulator that's already running instead of booting lechonk-qa: for a quick try only.
+An emulator that has run a game for hours slows down until Android kills the UI tree's dump. QA then stops and says
+the device broke, rather than judging what's left from screenshots, and the criteria after it aren't checked. The table at the
+end has a line per criterion. `runs/qa/<issue>-<release>/` has `verdicts.json`, `report.md`, the screenshots and
+the flows; the flows kept for later runs are in `runs/qa/flows/`. `LECHONK_QA_MODEL` sets the agent's model.
+
+The same run is the workflow le-chonk-qa, on your Mac's deployment: `scripts/redeploy_next.py` restarts your worker,
+which then registers it. Nothing starts it by itself yet; in Studio > Workflows, start it with
+`{"repo": "<you>/le-chonk-game", "number": 1, "release": "<tag>"}`.
+
+The release's APK is the verifier's build, a debug one, so the descriptions that only debug builds have are in it.
+Vibe's task asks for them: what the criteria name, the app describes in its accessibility tree.
+
 ## Not checked against your accounts yet
 
 - That a workflow running on your behalf may start runs on your Mac's deployment and its own next execution, and
   that the results come back as the code reads them.
 - The first build of the managed deployment's image.
+- QA: that the model reads screenshots sent beside a tool's result, and the adb, emulator and Maestro commands on
+  a real emulator. Its tests use a fake phone.
 
 If something fails, `uv run python scripts/status_next.py` shows the latest runs of the four workflows: their steps, which
 failed and why, and their warnings. It saves them to `runs/status/`. A watcher that can't read the channel three

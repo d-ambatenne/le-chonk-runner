@@ -32,9 +32,10 @@ def run_worker(deployment: str | None = None) -> None:
     use_deployment(deployment or VIBE)  # a worker registers under a deployment name, or it doesn't start
     import mistralai.workflows as workflows
 
+    from ..qa.workflow import WORKFLOWS as QA
     from .vibe import WORKFLOWS
 
-    asyncio.run(workflows.run_worker(WORKFLOWS))
+    asyncio.run(workflows.run_worker([*WORKFLOWS, *QA]))
 
 
 def _mistral() -> Any:

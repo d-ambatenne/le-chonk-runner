@@ -29,6 +29,13 @@ This is issue #{number} of {url}. {where}
 - This machine runs Linux, so it can't build or run the iOS app: keep the iOS app's setup correct, and check your work by building the Android app and running the tests.
 - Leave your changes in /app and don't commit them: the pipeline commits them after its own checks.
 
+## Testability
+
+After your checks, a tester checks the Android app against the acceptance criteria on an emulator. It reads the screen's accessibility tree, so make every state the criteria name readable there, with Compose semantics:
+- What a player sees but you draw on a Canvas, such as hearts, lives or a status, gets a content description in every build, such as "4 of 5 hearts". Screen readers use it too.
+- Internal state, such as whether a character is in the air or where obstacles are, is described only in debug builds: check at run time that the app is debuggable (on Android, `ApplicationInfo.FLAG_DEBUGGABLE`), through an expect/actual function, and add those descriptions only then.
+- Keep buttons, titles and scores as real text, not drawn on a Canvas.
+
 When you are done, reply with a short summary of what you changed.
 """
 

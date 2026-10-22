@@ -29,6 +29,7 @@ class FakeGitHub:
         self.pulls: dict[str, list[dict[str, Any]]] = {}
         self.releases: dict[str, list[dict[str, Any]]] = {}
         self.files: dict[tuple[str, str, str], str] = {}
+        self.assets: dict[int, bytes] = {}  # a release file's content, by asset id
         self.requests: list[tuple[str, str]] = []
         self.fail_next: dict[str, int] = {}  # e.g. {"release": 1}: the next release fails with a 502
         self.refuse_repos = False  # True: making a repository is refused, as for the Mistral GitHub App
@@ -93,6 +94,7 @@ class FakeGitHub:
             ("POST", repo + r"/releases", self._create_release),
             ("GET", repo + r"/releases/tags/(?P<tag>.+)", self._release_by_tag),
             ("POST", repo + r"/releases/(?P<rid>\d+)/assets", self._upload_asset),
+            ("GET", repo + r"/releases/assets/(?P<aid>\d+)", self._download_asset),
             ("GET", r"/search/issues", self._search),
             ("POST", r"/user/repos", self._create_repo),
         ]
@@ -199,10 +201,17 @@ class FakeGitHub:
     def _upload_asset(self, request: httpx.Request, body: Any, repo: str, rid: str) -> httpx.Response:
         release = next(r for r in self.releases[repo] if r["id"] == int(rid))
         name = request.url.params["name"]
-        asset = {"name": name, "size": len(request.content), "content_type": request.headers.get("content-type"),
+        asset_id = len(self.assets) + 1
+        self.assets[asset_id] = request.content
+        asset = {"id": asset_id, "name": name, "size": len(request.content), "content_type": request.headers.get("content-type"),
                  "browser_download_url": f"https://github.com/{repo}/releases/download/{release['tag_name']}/{name}"}
         release["assets"].append(asset)
         return httpx.Response(201, json=asset)
+
+    def _download_asset(self, request: httpx.Request, body: Any, repo: str, aid: str) -> httpx.Response:
+        if request.headers.get("accept") != "application/octet-stream" or int(aid) not in self.assets:
+            return httpx.Response(404, json={"message": "Not Found"})
+        return httpx.Response(200, content=self.assets[int(aid)], headers={"Content-Type": "application/octet-stream"})
 
     def _create_repo(self, request: httpx.Request, body: Any) -> httpx.Response:
         if self.refuse_repos:  # as GitHub answers an app that may not create repositories

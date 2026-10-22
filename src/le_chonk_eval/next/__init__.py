@@ -7,4 +7,5 @@ le-chonk-control, a managed deployment, runs the cloud workflows on behalf of wh
 le-chonk-vibe, a worker you run on your Mac, has Docker, git and the GitHub token:
     le-chonk-vibe-run one Vibe run in the task's container; the branch and a release with the APK
     le-chonk-vibe-ab  the skill A/B, judged here; a pre-release with the report and one APK per arm
+    le-chonk-qa       a release's APK on the emulator, checked against the issue's criteria (le_chonk_eval.qa)
 """

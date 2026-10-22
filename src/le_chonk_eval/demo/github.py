@@ -194,6 +194,16 @@ class GitHub:
         """The release of `tag`, made if it isn't there: a retried step reuses it."""
         return await self.release_by_tag(repo, tag) or await self.create_release(repo, tag, target, name, body, prerelease)
 
+    async def download_asset(self, repo: str, asset: dict[str, Any], dest: Path) -> Path:
+        """A release's file, by its asset id: GitHub redirects to its storage, without our token."""
+        response = await self.http.get(f"{self.api}/repos/{repo}/releases/assets/{asset['id']}", headers={"Accept": "application/octet-stream"},
+                                       follow_redirects=True, timeout=300)
+        if response.status_code >= 400:
+            raise GitHubError(response.status_code, f"downloading {asset.get('name')}: {response.text[:200]}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(response.content)
+        return dest
+
     async def upload_asset(self, repo: str, release: dict[str, Any], path: Path, name: str, content_type: str) -> dict[str, Any]:
         existing = next((a for a in release.get("assets") or [] if a.get("name") == name), None)
         if existing:  # uploaded by an earlier try of the same step

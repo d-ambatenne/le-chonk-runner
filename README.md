@@ -27,14 +27,16 @@ src/le_chonk_eval/
   agents/chat.py              le-chonk chat: the same agent in your terminal
   demo/                       the demo: Slack triage agent, GitHub, issue workflows, judge (docs/demo.md)
   next/                       the next phase: cloud workflows with connectors, the Mac's Vibe workflows (docs/next.md)
+  qa/                         QA: an agent checks a release's APK on an emulator against its issue (docs/next.md)
   workflow/                   the Workflows pipeline, the harbor commands for each arm, the fake harbor
   utils/                      job results, statistics, the dashboard, paths
-  cli.py                      le-chonk ab, compare, chat, demo, watch and next
+  cli.py                      le-chonk ab, compare, chat, demo, watch, next and qa
 demo/                         the demo's task checklist and Slack app manifest
 deploy/control/Dockerfile     the next phase's managed deployment, le-chonk-control
 scripts/check_next.py         what your Mistral account has for the next phase: a read-only check
 scripts/status_next.py        the next phase's latest runs: their steps, failures and warnings
 scripts/redeploy_next.py      ships a change: stops the watchers, pushes, rebuilds le-chonk-control, starts again
+scripts/check_screenshot.py   can the model see a screenshot sent beside a tool's result: the check QA depends on
 docs/skill-evaluation.md      the skill's published A/B, moved out of the skill folder
 docs/demo.md                  the demo: setup and use
 docs/architecture.md          what runs where, now and in the next phase, with diagrams

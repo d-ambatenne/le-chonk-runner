@@ -9,6 +9,7 @@
   le-chonk demo                  the demo: this Mac's worker and the Slack app (see docs/demo.md)
   le-chonk watch REPO            start watching a repo's issues on Mistral Workflows
   le-chonk next worker|start|stop  the next phase: Studio in the cloud, Vibe on this Mac (see docs/next.md)
+  le-chonk qa run --repo URL --issue N --release TAG  check a release's APK on an emulator against the issue
 """
 
 from __future__ import annotations
@@ -99,7 +100,28 @@ def main(argv: list[str] | None = None) -> None:
     start.add_argument("--poll", type=int, default=60, help="seconds between checks of the channel and the repo (default 60)")
     start.add_argument("--control", default="le-chonk-control", help="the managed deployment's name (default le-chonk-control)")
     start.add_argument("--vibe", default="le-chonk-vibe", help="your Mac's deployment name (default le-chonk-vibe)")
+
+    qa = sub.add_parser("qa", help="check a release's APK on an emulator against its issue (docs/next.md, QA)")
+    qa_sub = qa.add_subparsers(dest="qa_command", required=True)
+    qa_run = qa_sub.add_parser("run", help="install the release's APK on lechonk-qa and check every acceptance criterion")
+    qa_run.add_argument("--repo", required=True, help="https://github.com/<owner>/<repo>")
+    qa_run.add_argument("--issue", type=int, required=True, help="the issue whose criteria are checked")
+    qa_run.add_argument("--release", required=True, help="the release's tag, such as issue-1-20261021-202046")
+    qa_run.add_argument("--model", default=None, help="the QA agent's model (default mistral-large-4, or LECHONK_QA_MODEL)")
+    qa_run.add_argument("--serial", default=None, help="a running emulator or phone, such as emulator-5554; default: boot lechonk-qa")
     args = parser.parse_args(argv)
+
+    if args.command == "qa":
+        from .qa.inputs import QaInput
+        from .qa.run import run_qa, table
+
+        if not os.environ.get("MISTRAL_API_KEY"):
+            sys.exit("MISTRAL_API_KEY is not set. Put it in .env (see .env.example).")
+        params = QaInput(repo=args.repo, number=args.issue, release=args.release, model=args.model, serial=args.serial)
+        result = asyncio.run(run_qa(params))
+        print(table(result))
+        print(f"\nVerdicts, screenshots and flows: {result['out']}")
+        return
 
     if args.command == "next":
         from .next import start as next_start
