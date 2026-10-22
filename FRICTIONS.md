@@ -64,6 +64,7 @@ October 2026 (Harbor 0.24.0, mistralai-workflows 3.16.0, mistralai 2.10.1). Add 
 | 35 | A function result is text only: `FunctionResultEntry.result` is a string, so a tool can't hand the model a screenshot | The QA agent's screenshots go in as an image in a user message, in the same append as the results; `scripts/check_screenshot.py` checks that the model reads them | mistralai 2.10.1, `FunctionResultEntry` |
 | 36 | The SDK's loop for local MCP servers (`RunContext` with a stdio client) raises on any result that isn't text: "Only supporting text tool responses for now." | Phone MCP servers such as mobile-mcp and Maestro MCP return screenshots, so the QA agent runs its own loop with function tools | mistralai 2.10.1, `extra/mcp/base.py` |
 | 37 | Found no Mistral model or tool for computer use: operating a screen, finding where to tap in a screenshot | The QA agent taps by the UI tree's elements; what an app draws on a Canvas is checked from screenshots, or from descriptions the app adds | Mistral's docs and model cards, October 2026 |
+| 38 | Greedy sampling is refused: `temperature: 0` alone gets a 400, "top_p must be 1 when using greedy sampling", unless `top_p: 1` is sent too | The judge and `scripts/check_screenshot.py` send both. Before that, the judge failed on both real runs that reached it (#1 on 21 Oct, #3 on 22 Oct) | Chat Completions and Conversations, `mistral-large-4`, 21–22 Oct 2026 |
 
 ## Your observations
 

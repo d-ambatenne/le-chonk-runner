@@ -70,6 +70,7 @@ async def test_the_judge_reads_the_task_and_the_change() -> None:
     assert result["verdict"] == "partial" and result["score"] == 0.5 and result["prompt_tokens"] == 900
     request = client.calls[0]
     assert request["model"] == "mistral-large-4" and request["response_format"] == {"type": "json_object"}
+    assert request["temperature"] == 0 and request["top_p"] == 1  # greedy: the API refuses temperature 0 without top_p 1
     prompt = request["messages"][1]["content"]
     assert "- A third tap does nothing" in prompt and "Android APK built: yes. Shared tests pass: no." in prompt and "cut to fit" in prompt
 

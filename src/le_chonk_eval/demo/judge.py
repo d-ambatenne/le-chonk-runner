@@ -78,7 +78,8 @@ async def judge(client: Any, model: str, task: Task, details: dict[str, Any], di
             f"# Change ({len(diff['files'])} files)\n{diff['stat']}\n```diff\n{diff['diff']}\n```"
             + ("\n(The diff was cut to fit.)" if diff["truncated"] else ""))
     response = await client.chat.complete_async(
-        model=model.split("/", 1)[-1], temperature=0, response_format={"type": "json_object"},
+        # Greedy, so a verdict doesn't change between runs; Mistral refuses temperature 0 unless top_p is 1 (FRICTIONS.md, row 38).
+        model=model.split("/", 1)[-1], temperature=0, top_p=1, response_format={"type": "json_object"},
         messages=[{"role": "system", "content": SYSTEM}, {"role": "user", "content": user}],
     )
     content = response.choices[0].message.content
