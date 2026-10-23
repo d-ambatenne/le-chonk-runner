@@ -35,6 +35,11 @@ def _read(path: Path) -> dict[str, Any]:
         return {}
 
 
+def kept_agent(name: str) -> dict[str, Any] | None:
+    """What .state/studio-agents.json keeps for the agent `name`: its id and configuration, or None."""
+    return _read(state_path()).get(name)
+
+
 async def ensure_studio_agent(client: Any, name: str, *, model: str, instructions: str, tools: list[dict[str, Any]],
                               description: str, completion_args: dict[str, Any] | None = None,
                               logger: logging.Logger | None = None, store: dict[str, Any] | None = None) -> str:

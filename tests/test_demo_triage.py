@@ -13,7 +13,7 @@ from conftest import FIXTURE_SKILL
 from fake_github import FakeGitHub
 from fakes import FakeClient, call
 from le_chonk_eval.demo.github import GitHub
-from le_chonk_eval.demo.issues import AB_REQUESTED, READY, Task
+from le_chonk_eval.demo.issues import AB_REQUESTED, LABELS, READY, Task
 from le_chonk_eval.demo.slack_bot import answer, build_app, should_answer
 from le_chonk_eval.demo.triage import PROJECTS, THREADS, SlackContext, Triage, TriageTools
 
@@ -65,7 +65,7 @@ async def test_a_request_becomes_an_issue(fake: FakeGitHub) -> None:
     assert json.loads(results(client, 3)["t3"]) == {"issues": []}
     assert PROJECTS.get("C1") == REPO and THREADS.get("C1:1712.5") == "conv_1" and Triage.knows(THREAD)
     issue = fake.issues[REPO][0]
-    assert [label["name"] for label in issue["labels"]] == [READY] and len(fake.labels[REPO]) == 9
+    assert [label["name"] for label in issue["labels"]] == [READY] and set(fake.labels[REPO]) == set(LABELS)  # every label, with its color
     task = Task.from_issue(issue["title"], issue["body"])
     assert task.criteria == ["A second tap in the air jumps again", "A third tap does nothing"]
     assert (task.slack_channel, task.slack_thread, task.requested_by) == ("C1", "1712.5", "U1")

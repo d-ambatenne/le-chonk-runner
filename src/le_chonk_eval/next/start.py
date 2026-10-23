@@ -65,12 +65,26 @@ async def find_channel(client: Any, channel: str) -> str:
                      ". Give its exact name, or its ID (in Slack, the channel's details, at the bottom).")
 
 
+async def triage_agents(client: Any) -> dict[str, Any]:
+    """The triage agent, made or updated here and kept in .state/studio-agents.json, for the Slack watcher's state.
+
+    A watcher keeps the agent's id in its state, which a new watcher starts without: each one made an agent of its own.
+    Given this one, every watcher started from this Mac uses the same Studio agent, updated when its configuration changes."""
+    from ..agents.studio import kept_agent
+    from ..demo.triage import AGENT_NAME, Triage
+
+    await Triage(client, None).agent_id()
+    entry = kept_agent(AGENT_NAME)
+    return {AGENT_NAME: entry} if entry else {}
+
+
 async def start(channel: str, repo: str | None, options: dict[str, Any], control: str = CONTROL) -> dict[str, Any]:
     from ..demo.github import GitHub, parse_repo
     from .control import SlackInput, TasksInput
 
     client = _mistral()
     channel_id = await find_channel(client, channel)
+    agents = await triage_agents(client)
     started: dict[str, Any] = {"channel": channel_id}
     if repo:
         repo = parse_repo(repo)
@@ -80,7 +94,7 @@ async def start(channel: str, repo: str | None, options: dict[str, Any], control
         started["tasks"] = await start_watcher(client, "le-chonk-tasks", tasks_watch_id(repo), control,
                                                TasksInput(repo=repo, **options).model_dump())
     started["slack"] = await start_watcher(client, "le-chonk-slack", slack_watch_id(channel_id), control,
-                                           SlackInput(channel=channel_id, repo=repo, **options).model_dump())
+                                           SlackInput(channel=channel_id, repo=repo, agents=agents, **options).model_dump())
     return started
 
 

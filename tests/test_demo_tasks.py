@@ -53,3 +53,34 @@ def test_the_vibe_command_for_an_issue(tmp_path: Path) -> None:
     assert f"-p {tmp_path} -a vibe -m mistral/mistral-large-4 -k 1" in text
     assert f"--skill {skill}" in text and "--ak max_price=3" in text and "--ae VIBE_BACKEND=mistral" in text
     assert "--skill" not in run_command("issue-7-ab-no-skill", "no-skill", harbor=["harbor"], task=tmp_path, agent=VIBE, skills=[skill])
+
+
+def _commit(repo: Path, files: dict[str, str], message: str) -> None:
+    write_tree(repo, files)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "--quiet", "-m", message], cwd=repo, check=True)
+
+
+def test_a_repo_github_started_with_a_readme_and_a_license_is_a_new_project(tmp_path: Path) -> None:
+    from le_chonk_eval.demo import github as gh
+
+    clone = tmp_path / "clone"
+    clone.mkdir()
+    subprocess.run(["git", "init", "--quiet"], cwd=clone, check=True)
+    _commit(clone, {"README.md": "# le-chonk-game\n", "LICENSE": "MIT License\n"}, "Initial commit")  # what GitHub makes
+    assert gh.is_fresh(clone) and gh.starter_files(clone) == ["LICENSE", "README.md"]
+    task = build_task("denis/le-chonk-game", 1, ISSUE, clone, tmp_path / "task", empty=True)
+    instruction = (task / "instruction.md").read_text()
+    assert "no code yet, only LICENSE and README.md: create the project in /app" in instruction and "keep those files" in instruction
+    assert "create it in an empty folder and move it into /app" in instruction
+
+    _commit(clone, {"docs/README.md": "more\n"}, "Docs")  # a file in a folder: not what a new repo starts with
+    assert not gh.is_fresh(clone) and gh.starter_files(clone) is None
+
+
+def test_the_instruction_says_what_to_keep_only_for_a_new_project() -> None:
+    from le_chonk_eval.demo.task_builder import instruction
+
+    assert "keep that file" in instruction("d/x", 1, ISSUE, True, ["README.md"])
+    assert "The repository is empty: create the project in /app" in instruction("d/x", 1, ISSUE, True, [])
+    assert "checked out in /app" in instruction("d/x", 1, ISSUE, False, ["README.md"])

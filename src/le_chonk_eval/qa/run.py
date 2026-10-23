@@ -163,6 +163,8 @@ def table(result: dict[str, Any]) -> str:
         lines.append(f"  {ICONS[v['verdict']]}  {v['number']}. {v['criterion'][:70]}  ({kind}){block}")
     for problem in result.get("environment_errors") or []:
         lines.append(f"The device broke, so the run stopped: {problem}\nRun again on a fresh emulator: without --serial, QA boots lechonk-qa from its clean snapshot.")
+    if result.get("issue"):
+        lines.append(result["issue"])
     return "\n".join(lines)
 
 
@@ -183,6 +185,59 @@ def write_results(result: dict[str, Any], out: Path) -> None:
     out.mkdir(parents=True, exist_ok=True)
     (out / "verdicts.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
     (out / "report.md").write_text(report_markdown(result), encoding="utf-8")
+
+
+def issue_comment(result: dict[str, Any]) -> str:
+    """QA's comment on the issue: the count, a row per criterion, and why the failures failed."""
+    total = len(result["verdicts"])
+    head = (f"QA ran release `{result['release']}` on an emulator: {result['passed']} of {total} criteria passed"
+            + (f", {result['failed']} failed" if result["failed"] else "")
+            + (f", {result['cant_check']} couldn't be checked" if result["cant_check"] else "") + ".")
+    rows = ["| # | Criterion | Verdict | Checked by |", "|---|---|---|---|"]
+    for v in result["verdicts"]:
+        how = "the screen's text" if v["check"] == "tree" else "a screenshot, judged by the agent"
+        how += ", a saved flow" if v["source"] == "flow" else ""
+        rows.append(f"| {v['number']} | {v['criterion'].replace('|', '/')} | {v['verdict']} | {how} |")
+    why = [f"- **{v['number']}.** {v['evidence'][:400]}" for v in result["verdicts"] if v["verdict"] == "fail"]
+    note = "The QA agent sees the issue and the running app, never the code. A failed check of the screen's text blocks a merge; a screenshot judgment doesn't."
+    return "\n\n".join([head, "\n".join(rows)] + (["Why it failed:\n" + "\n".join(why)] if why else []) + [note])
+
+
+async def mark_issue(github: Any, result: dict[str, Any]) -> str:
+    """Mark the issue with QA's verdict: qa:tested when every criterion passed, qa:bugs when one failed, and comment.
+
+    A run on a broken device marks nothing: its verdicts say nothing about the app. Returns what was done."""
+    from ..demo.issues import QA_BUGS, QA_TESTED
+
+    if result.get("environment_errors"):
+        return "Issue not marked: the device broke, so the verdicts don't count."
+    repo, number = result["repo"], result["number"]
+    verdicts = [v["verdict"] for v in result["verdicts"]]
+    label = QA_BUGS if "fail" in verdicts else QA_TESTED if verdicts and all(v == "pass" for v in verdicts) else None
+    if label:
+        await github.ensure_labels(repo)
+        await github.relabel(repo, number, add=[label], remove=[QA_TESTED if label == QA_BUGS else QA_BUGS])
+    await github.comment(repo, number, issue_comment(result))
+    return f"Issue #{number} marked {label}, with a comment." if label else f"Issue #{number}: commented; not marked, since some criteria weren't checked."
+
+
+async def mark_saved(repo: str, number: int, release: str, github: Any = None) -> str:
+    """Mark an issue from a QA run that's already done, from its verdicts.json."""
+    from ..demo.github import GitHub, parse_repo
+
+    saved = out_dir(number, release) / "verdicts.json"
+    if not saved.is_file():
+        raise ValueError(f"No QA run of #{number} on {release}: {saved} doesn't exist")
+    result = json.loads(saved.read_text(encoding="utf-8"))
+    if result.get("repo") != parse_repo(repo):
+        raise ValueError(f"{saved} is a run on {result.get('repo')}, not {parse_repo(repo)}")
+    owned = github is None
+    github = github or GitHub()
+    try:
+        return await mark_issue(github, result)
+    finally:
+        if owned:
+            await github.close()
 
 
 def _device(serial: str) -> Device:
@@ -218,5 +273,22 @@ async def run_qa(params: QaInput, *, github: Any = None, client: Any = None, emu
         package, activity = await install(device, apk)
         verdicts = await check_all(client, device, make_maestro(serial), repo, params.number, criteria, package, activity, out, params.model)
     result = summary(repo, params.number, params.release, title, verdicts, out, package)
+    if params.label:
+        result["issue"] = await _mark(github if not owned_github else None, result)
     write_results(result, out)
     return result
+
+
+async def _mark(github: Any, result: dict[str, Any]) -> str:
+    """mark_issue, with a GitHub client of its own unless one is given; a GitHub error is reported, not raised."""
+    from ..demo.github import GitHub, GitHubError
+
+    owned = github is None
+    github = github or GitHub()
+    try:
+        return await mark_issue(github, result)
+    except GitHubError as exc:
+        return f"Issue not marked: GitHub answered {exc}"
+    finally:
+        if owned:
+            await github.close()

@@ -10,6 +10,7 @@
   le-chonk watch REPO            start watching a repo's issues on Mistral Workflows
   le-chonk next worker|start|stop  the next phase: Studio in the cloud, Vibe on this Mac (see docs/next.md)
   le-chonk qa run --repo URL --issue N --release TAG  check a release's APK on an emulator against the issue
+  le-chonk qa mark --repo URL --issue N --release TAG mark the issue qa:tested or qa:bugs from a run already done
 """
 
 from __future__ import annotations
@@ -109,7 +110,21 @@ def main(argv: list[str] | None = None) -> None:
     qa_run.add_argument("--release", required=True, help="the release's tag, such as issue-1-20261021-202046")
     qa_run.add_argument("--model", default=None, help="the QA agent's model (default mistral-large-4, or LECHONK_QA_MODEL)")
     qa_run.add_argument("--serial", default=None, help="a running emulator or phone, such as emulator-5554; default: boot lechonk-qa")
+    qa_run.add_argument("--no-label", action="store_true", help="leave the issue alone: no qa:tested or qa:bugs, no comment")
+    qa_mark = qa_sub.add_parser("mark", help="mark the issue qa:tested or qa:bugs from a QA run that's already done, with a comment")
+    qa_mark.add_argument("--repo", required=True, help="https://github.com/<owner>/<repo>")
+    qa_mark.add_argument("--issue", type=int, required=True, help="the issue the run checked")
+    qa_mark.add_argument("--release", required=True, help="the release the run checked")
     args = parser.parse_args(argv)
+
+    if args.command == "qa" and args.qa_command == "mark":
+        from .qa.run import mark_saved
+
+        try:
+            print(asyncio.run(mark_saved(args.repo, args.issue, args.release)))
+        except ValueError as exc:
+            sys.exit(str(exc))
+        return
 
     if args.command == "qa":
         from .qa.inputs import QaInput
@@ -117,7 +132,7 @@ def main(argv: list[str] | None = None) -> None:
 
         if not os.environ.get("MISTRAL_API_KEY"):
             sys.exit("MISTRAL_API_KEY is not set. Put it in .env (see .env.example).")
-        params = QaInput(repo=args.repo, number=args.issue, release=args.release, model=args.model, serial=args.serial)
+        params = QaInput(repo=args.repo, number=args.issue, release=args.release, model=args.model, serial=args.serial, label=not args.no_label)
         result = asyncio.run(run_qa(params))
         print(table(result))
         print(f"\nVerdicts, screenshots and flows: {result['out']}")

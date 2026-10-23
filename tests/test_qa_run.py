@@ -236,3 +236,79 @@ async def test_a_device_that_breaks_stops_the_run_and_says_so(github: FakeGitHub
     assert len([i for i in client.inputs if "agent_id" in i]) == 1  # no conversation on the broken device
     assert result["environment_errors"] == [second["environment"]] and (result["passed"], result["cant_check"]) == (1, 2)
     assert "The device broke, so the run stopped" in qa_run.table(result) and "without --serial" in qa_run.table(result)
+
+
+def labels(github: FakeGitHub, number: int = 1) -> set[str]:
+    issue = next(i for i in github.issues[REPO] if i["number"] == number)
+    return {label["name"] for label in issue["labels"]}
+
+
+async def test_a_run_marks_its_issue_tested_or_with_bugs_and_comments(github: FakeGitHub) -> None:
+    github.issues[REPO][0]["labels"] = [{"name": "qa:bugs"}, {"name": "vibe:failed"}]  # an earlier run found a bug
+    passing = FakeClient([[call(f"a{k}", "report_verdict", verdict="pass", check="tree", evidence="Seen.")] for k in (1, 2, 3)])
+    result = await qa_run.run_qa(QaInput(repo=REPO, number=1, release=TAG, serial="emulator-5554"),
+                                 github=GitHub("t0ken", transport=github.transport()), client=passing,
+                                 make_device=lambda serial: FakeDevice(), make_maestro=FakeMaestro())
+    assert labels(github) == {"qa:tested", "vibe:failed"}  # QA owns only the qa: labels
+    assert result["issue"] == "Issue #1 marked qa:tested, with a comment." and result["issue"] in qa_run.table(result)
+    comment = github.comments[(REPO, 1)][-1]
+    assert comment.startswith(f"QA ran release `{TAG}` on an emulator: 3 of 3 criteria passed.") and "never the code" in comment
+    assert "qa:tested" in {label["name"] for label in github.labels[REPO].values()}  # the label exists in the repo, with its color
+
+    failing = FakeClient([[call("b1", "report_verdict", verdict="fail", check="tree", evidence="GAME OVER never showed.")]]
+                         + [[call(f"b{k}", "report_verdict", verdict="pass", check="screenshot", evidence="Seen.")] for k in (2, 3)])
+    await qa_run.run_qa(QaInput(repo=REPO, number=1, release=TAG, serial="emulator-5554"),
+                        github=GitHub("t0ken", transport=github.transport()), client=failing,
+                        make_device=lambda serial: FakeDevice(), make_maestro=FakeMaestro())
+    assert labels(github) == {"qa:bugs", "vibe:failed"}
+    assert "1 failed" in github.comments[(REPO, 1)][-1] and "- **1.** GAME OVER never showed." in github.comments[(REPO, 1)][-1]
+
+
+async def test_a_broken_device_or_no_label_leaves_the_issue_alone(github: FakeGitHub) -> None:
+    device = FakeDevice()
+    device.tree_works_for = 0
+    result = await qa_run.run_qa(QaInput(repo=REPO, number=1, release=TAG, serial="emulator-5554"),
+                                 github=GitHub("t0ken", transport=github.transport()), client=FakeClient([]),
+                                 make_device=lambda serial: device, make_maestro=FakeMaestro())
+    assert result["issue"].startswith("Issue not marked: the device broke") and labels(github) == set() and not github.comments.get((REPO, 1))
+    quiet = FakeClient([[call(f"a{k}", "report_verdict", verdict="pass", check="tree", evidence="Seen.")] for k in (1, 2, 3)])
+    result = await qa_run.run_qa(QaInput(repo=REPO, number=1, release=TAG, serial="emulator-5554", label=False),
+                                 github=GitHub("t0ken", transport=github.transport()), client=quiet,
+                                 make_device=lambda serial: FakeDevice(), make_maestro=FakeMaestro())
+    assert "issue" not in result and labels(github) == set()
+
+
+async def test_an_issue_can_be_marked_from_a_run_already_done(github: FakeGitHub) -> None:
+    passing = FakeClient([[call(f"a{k}", "report_verdict", verdict="pass", check="tree", evidence="Seen.")] for k in (1, 2, 3)])
+    await qa_run.run_qa(QaInput(repo=REPO, number=1, release=TAG, serial="emulator-5554", label=False),
+                        github=GitHub("t0ken", transport=github.transport()), client=passing,
+                        make_device=lambda serial: FakeDevice(), make_maestro=FakeMaestro())
+    said = await qa_run.mark_saved(f"https://github.com/{REPO}", 1, TAG, github=GitHub("t0ken", transport=github.transport()))
+    assert said == "Issue #1 marked qa:tested, with a comment." and labels(github) == {"qa:tested"}
+    with pytest.raises(ValueError, match="No QA run of #1 on issue-9"):
+        await qa_run.mark_saved(REPO, 1, "issue-9", github=GitHub("t0ken", transport=github.transport()))
+
+
+def test_the_cli_marks_from_a_saved_run_and_runs_can_skip_marking(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    from le_chonk_eval import cli
+
+    monkeypatch.setattr(cli, "load_dotenv", lambda: None)
+    asked: list[tuple[str, int, str]] = []
+
+    async def fake_mark(repo: str, number: int, release: str) -> str:
+        asked.append((repo, number, release))
+        return "Issue #3 marked qa:tested, with a comment."
+
+    monkeypatch.setattr(qa_run, "mark_saved", fake_mark)
+    cli.main(["qa", "mark", "--repo", REPO, "--issue", "3", "--release", TAG])  # no model calls, so no key needed
+    assert asked == [(REPO, 3, TAG)] and "marked qa:tested" in capsys.readouterr().out
+    seen: list[QaInput] = []
+
+    async def fake_run(params: QaInput) -> dict[str, Any]:
+        seen.append(params)
+        return {"repo": REPO, "number": 1, "release": TAG, "passed": 0, "failed": 0, "cant_check": 0, "out": "runs/qa/x", "verdicts": []}
+
+    monkeypatch.setenv("MISTRAL_API_KEY", "test-key")
+    monkeypatch.setattr(qa_run, "run_qa", fake_run)
+    cli.main(["qa", "run", "--repo", REPO, "--issue", "1", "--release", TAG, "--no-label"])
+    assert seen[0].label is False

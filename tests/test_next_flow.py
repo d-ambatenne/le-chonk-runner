@@ -259,10 +259,23 @@ async def test_start_resolves_the_channel_and_starts_both_watchers(world: Simple
                        "slack": "started (le-chonk-slack-c0lechonk1-a)"}
     assert [s["deployment_name"] for s in client.started] == ["le-chonk-control", "le-chonk-control"]
     assert client.started[1]["input"]["channel"] == "C0LECHONK1" and client.started[1]["input"]["since"] is None
+    triage = client.started[1]["input"]["agents"]["le-chonk-triage"]
+    assert triage["id"] == "ag_1" and len(client.created) == 1  # made here once, and handed to the watcher
     again = await start.start("C0LECHONK1", REPO, {})
     assert again["slack"] == "already running (le-chonk-slack-c0lechonk1-a)" and len(client.started) == 2
+    assert len(client.created) == 1 and not client.updated  # the same agent again: kept in .state/studio-agents.json
     assert (await start.stop("C0LECHONK1", REPO)) == {"le-chonk-slack-c0lechonk1-a": "stopped", "le-chonk-tasks-denis-le-chonk-game-a": "stopped"}
     assert (await start.stop("C0LECHONK1", None)) == {"le-chonk-slack-c0lechonk1": "not running"}
+
+
+async def test_a_watcher_given_the_starts_triage_agent_makes_none(world: SimpleNamespace) -> None:
+    from le_chonk_eval.demo.triage import Triage
+    from le_chonk_eval.next import start
+
+    agents = await start.triage_agents(world.mistral)
+    store = {name: dict(entry) for name, entry in agents.items()}  # as the watcher's state carries it
+    assert await Triage(world.mistral, None, agents=store).agent_id() == agents["le-chonk-triage"]["id"]
+    assert len(world.mistral.created) == 1 and not world.mistral.updated
 
 
 async def _slack_search(**kwargs: Any) -> dict[str, Any]:

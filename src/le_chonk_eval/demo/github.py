@@ -286,10 +286,21 @@ def head(repo_dir: Path) -> str:
 FIRST_COMMIT = "Start the repository"
 
 
+STARTERS = ("readme", "license", "licence", "copying", ".gitignore", ".gitattributes")  # what GitHub can add to a new repo
+
+
+def starter_files(repo_dir: Path) -> list[str] | None:
+    """The tracked files, when they're only what a new repository starts with (a README, a license, a .gitignore); else None."""
+    tracked = git(["ls-files"], cwd=repo_dir, check=False).stdout.splitlines()
+    starts = all("/" not in path and path.lower().startswith(STARTERS) for path in tracked)
+    return tracked if starts else None
+
+
 def is_fresh(repo_dir: Path) -> bool:
-    """Only the first commit the demo made: as good as empty for Vibe's instruction."""
+    """No code yet, as good as empty for Vibe's instruction: only the demo's first commit, or only a README, a license
+    and a .gitignore, such as the first commit GitHub makes when it creates a repository with them."""
     log = git(["log", "--format=%s", "-n", "2"], cwd=repo_dir, check=False).stdout.splitlines()
-    return log == [FIRST_COMMIT]
+    return log == [FIRST_COMMIT] or starter_files(repo_dir) is not None
 
 
 def reset_to(repo_dir: Path, commit: str) -> None:

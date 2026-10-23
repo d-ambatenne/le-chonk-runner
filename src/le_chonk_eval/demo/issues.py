@@ -37,6 +37,8 @@ AB_REQUESTED = "ab:requested"
 AB_RUNNING = "ab:running"
 AB_DONE = "ab:done"
 AB_FAILED = "ab:failed"
+QA_TESTED = "qa:tested"
+QA_BUGS = "qa:bugs"
 
 # name: (color, description), created in the repo when the project is set
 LABELS = {
@@ -49,6 +51,8 @@ LABELS = {
     AB_RUNNING: ("fbca04", "The skill A/B is running"),
     AB_DONE: ("0e8a16", "The skill A/B finished: the report is in the comments"),
     AB_FAILED: ("b60205", "The skill A/B failed"),
+    QA_TESTED: ("1a7f37", "QA ran the release on an emulator: every acceptance criterion passed"),
+    QA_BUGS: ("d73a4a", "QA ran the release on an emulator: a criterion failed, see its comment"),
 }
 BUSY = {RUNNING, AB_RUNNING}
 

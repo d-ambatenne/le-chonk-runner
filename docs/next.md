@@ -41,8 +41,9 @@ Add `--smoke` for a smoke test, `--queue 3` to queue issue #3 again, and `-m "�
 
 1. Start the channel's watcher: `uv run le-chonk next start --channel le-chonk --smoke`. It runs on your behalf,
    with your connectors, because `start` uses your API key.
-2. Create the app's repo on GitHub, empty and private, such as `le-chonk-game`, and give the Mistral GitHub App
-   access to it (github.com/apps/mistralai › Configure). The connector can't create repos: GitHub refuses the App
+2. Create the app's repo on GitHub, such as `le-chonk-game`, and give the Mistral GitHub App access to it
+   (github.com/apps/mistralai › Configure). Empty, or with only a README, a license and a .gitignore: Vibe's first
+   task then creates the project next to them. The connector can't create repos: GitHub refuses the App
    ([friction 32](../FRICTIONS.md#the-demo)). Then, in the channel: `Use https://github.com/<you>/le-chonk-game`. The
    agent starts watching its issues. Or start with `--repo https://github.com/<you>/le-chonk-game`, which also
    colors its labels.
@@ -70,6 +71,8 @@ Answers come within a minute: the watcher reads the channel every minute (`--pol
 - **le-chonk-vibe-ab** (your Mac) runs the A/B and judges every run there, where the changes are. A pre-release gets
   the report and one APK per arm; the cloud posts the links.
 - **In Studio:** the executions of all four workflows, and the triage agent's conversations.
+  There's one triage agent: `next start` makes it once, keeps its id in `.state/studio-agents.json`, and
+  updates it when its instructions change.
 
 Stop the watchers with `uv run le-chonk next stop --channel le-chonk --repo https://github.com/<you>/le-chonk-game`.
 A run in progress is stopped on your Mac too, and its issue is freed, so you can queue it again.
@@ -83,7 +86,8 @@ An agent installs a release's APK on an emulator and checks it against the issue
 the criteria and the running app, never the code. Each criterion gets pass, fail or can't check. A check read
 from the screen's UI tree would block a merge; one judged from a screenshot wouldn't. For a tree check, the agent
 writes a Maestro flow: later runs replay the flows, and the agent explores only criteria without one, or whose flow
-failed. A new flow is replayed before it's kept; when that fails, the agent gets the reason and may fix the flow twice. For now QA only reports: it files no issues and holds no merge.
+failed. A new flow is replayed before it's kept; when that fails, the agent gets the reason and may fix the flow
+twice. For now QA marks the issue and comments, but files no bugs and holds no merge.
 
 Set up once, on your Mac:
 
@@ -121,6 +125,11 @@ An emulator that has run a game for hours slows down until Android kills the UI 
 the device broke, rather than judging what's left from screenshots, and the criteria after it aren't checked. The table at the
 end has a line per criterion. `runs/qa/<issue>-<release>/` has `verdicts.json`, `report.md`, the screenshots and
 the flows; the flows kept for later runs are in `runs/qa/flows/`. `LECHONK_QA_MODEL` sets the agent's model.
+
+QA marks the issue it checked: `qa:tested` when every criterion passed, `qa:bugs` when one failed, with a comment of
+the verdicts. A run on a broken device marks nothing. `--no-label` leaves the issue alone, and
+`uv run le-chonk qa mark --repo … --issue N --release TAG` marks it from a run that's already done. QA changes only the
+`qa:` labels; the `vibe:` ones are the pipeline's.
 
 The same run is the workflow le-chonk-qa, on your Mac's deployment: `scripts/redeploy_next.py` restarts your worker,
 which then registers it. Nothing starts it by itself yet; in Studio > Workflows, start it with

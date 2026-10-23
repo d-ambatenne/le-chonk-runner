@@ -14,7 +14,7 @@ import shutil
 from pathlib import Path
 
 from ..utils.paths import task_dir
-from .github import EXCLUDED
+from .github import EXCLUDED, starter_files
 from .issues import Task
 
 INSTRUCTION = """# {title}
@@ -45,9 +45,17 @@ COPY repo/ /app/
 """
 
 
-def instruction(repo: str, number: int, task: Task, empty: bool) -> str:
-    where = ("The repository is empty: create the project in /app, the current directory." if empty
-             else "The repository is checked out in /app, the current directory.")
+def instruction(repo: str, number: int, task: Task, empty: bool, kept: list[str] | None = None) -> str:
+    """Vibe's instruction. kept: the files a repository with no code yet already has, such as a README and a license."""
+    if empty and kept:
+        names = " and ".join([", ".join(kept[:-1]), kept[-1]] if len(kept) > 1 else kept)
+        where = (f"The repository has no code yet, only {names}: create the project in /app, the current directory, and keep "
+                 f"{'those files' if len(kept) > 1 else 'that file'}. If a tool won't create a project in a folder that isn't "
+                 "empty, create it in an empty folder and move it into /app.")
+    elif empty:
+        where = "The repository is empty: create the project in /app, the current directory."
+    else:
+        where = "The repository is checked out in /app, the current directory."
     return INSTRUCTION.format(title=task.title, number=number, url=f"https://github.com/{repo}", where=where, brief=task.brief())
 
 
@@ -71,5 +79,6 @@ def build_task(repo: str, number: int, task: Task, clone_dir: Path, out: Path, e
     description = task.title.replace("\\", "").replace('"', "'")
     config = re.sub(r'(?m)^description = ".*"$', f'description = "Issue #{number} of {repo}: {description}"', config, count=1)
     (out / "task.toml").write_text(config)
-    (out / "instruction.md").write_text(instruction(repo, number, task, empty), encoding="utf-8")
+    kept = starter_files(clone_dir) if empty else None
+    (out / "instruction.md").write_text(instruction(repo, number, task, empty, kept), encoding="utf-8")
     return out
