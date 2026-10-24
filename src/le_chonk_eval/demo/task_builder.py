@@ -34,6 +34,7 @@ This is issue #{number} of {url}. {where}
 After your checks, a tester checks the Android app against the acceptance criteria on an emulator. It reads the screen's accessibility tree, so make every state the criteria name readable there, with Compose semantics:
 - What a player sees but you draw on a Canvas, such as hearts, lives or a status, gets a content description in every build, such as "4 of 5 hearts". Screen readers use it too.
 - Internal state, such as whether a character is in the air or where obstacles are, is described only in debug builds: check at run time that the app is debuggable (on Android, `ApplicationInfo.FLAG_DEBUGGABLE`), through an expect/actual function, and add those descriptions only then.
+- A tree read takes a second or two, so a state that lasts less, such as a jump or a hit, can be over before it is read. Count such events in the debug descriptions too, such as "jumps: 3" and "hits: 1": the count still shows them afterwards.
 - Keep buttons, titles and scores as real text, not drawn on a Canvas.
 
 When you are done, reply with a short summary of what you changed.

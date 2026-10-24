@@ -67,7 +67,8 @@ Answers come within a minute: the watcher reads the channel every minute (`--pol
   starts the run on your Mac through the Workflows API, and checks on it every minute.
 - **le-chonk-vibe-run** (your Mac) clones the repo, runs Vibe in the task's container and the checks. If the APK
   builds and the tests pass, it pushes `vibe/<run>` and makes a release with the APK.
-- Back in the cloud: the PR, the judge on its diff, the squash merge, the labels, the comment and the reply.
+- Back in the cloud: the PR, the judge on its diff, the squash merge, the labels, the comment and the reply. The judge
+  reads the code first, then the tests and the other files; wrappers, IDE projects, icons and binaries it only sees named.
 - **le-chonk-vibe-ab** (your Mac) runs the A/B and judges every run there, where the changes are. A pre-release gets
   the report and one APK per arm; the cloud posts the links.
 - **In Studio:** the executions of all four workflows, and the triage agent's conversations.
@@ -83,11 +84,12 @@ other one with its state and stops ([friction 27](../FRICTIONS.md#the-demo)).
 ## QA: an agent checks the app
 
 An agent installs a release's APK on an emulator and checks it against the issue's acceptance criteria. It sees
-the criteria and the running app, never the code. Each criterion gets pass, fail or can't check. A check read
+the issue's title and description with each criterion, and the running app. It can read other issues, such as the
+one an issue is part of, but never the code, the pull requests or the comments. Each criterion gets pass, fail or can't check. A check read
 from the screen's UI tree would block a merge; one judged from a screenshot wouldn't. For a tree check, the agent
 writes a Maestro flow: later runs replay the flows, and the agent explores only criteria without one, or whose flow
 failed. A new flow is replayed before it's kept; when that fails, the agent gets the reason and may fix the flow
-twice. For now QA marks the issue and comments, but files no bugs and holds no merge.
+twice. A kept flow starts with its criterion's words: when someone edits the criterion, QA checks it again. For now QA marks the issue and comments, but files no bugs and holds no merge.
 
 Set up once, on your Mac:
 
@@ -136,7 +138,8 @@ which then registers it. Nothing starts it by itself yet; in Studio > Workflows,
 `{"repo": "<you>/le-chonk-game", "number": 1, "release": "<tag>"}`.
 
 The release's APK is the verifier's build, a debug one, so the descriptions that only debug builds have are in it.
-Vibe's task asks for them: what the criteria name, the app describes in its accessibility tree.
+Vibe's task asks for them: what the criteria name, the app describes in its accessibility tree. A jump or a hit is over
+before a tree read, so debug builds count them too, such as "jumps: 3": then a jump is a tree check, with a flow.
 
 ## Not checked against your accounts yet
 

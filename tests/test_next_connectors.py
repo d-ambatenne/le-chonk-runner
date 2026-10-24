@@ -102,9 +102,12 @@ def test_a_tools_error_keeps_its_text_and_can_be_retried() -> None:
 
 def test_a_diff_is_summed_up_for_the_judge() -> None:
     diff = "diff --git a/shared/src/Game.kt b/shared/src/Game.kt\n--- a/shared/src/Game.kt\n+++ b/shared/src/Game.kt\n-old\n+new\n+more\n"
-    summary = diff_summary(diff, 10)
-    assert summary["files"] == ["shared/src/Game.kt"] and summary["stat"] == " 1 files changed, 2 insertions(+), 1 deletions(-)"
-    assert summary["truncated"] and len(summary["diff"]) == 10
+    diff = diff.replace("+++ b/shared/src/Game.kt\n", "+++ b/shared/src/Game.kt\n@@ -1 +1,2 @@\n")
+    summary = diff_summary(diff, 1000)
+    assert summary["files"] == ["shared/src/Game.kt"] and summary["diff"] == diff and not summary["truncated"]
+    assert summary["stat"] == " shared/src/Game.kt | +2 -1\n 1 files changed, 2 insertions(+), 1 deletions(-)"
+    small = diff_summary(diff, 10)
+    assert small["truncated"] and small["diff"] == "" and small["not_shown"] == ["shared/src/Game.kt"]
 
 
 # As scripts/check_next.py saw them, with the names changed

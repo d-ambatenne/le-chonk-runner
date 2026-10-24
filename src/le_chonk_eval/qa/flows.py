@@ -2,6 +2,9 @@
 
 A kept flow that passes is the criterion's verdict, with no model call. When it fails, or there's none, the
 agent explores. Flows live on this Mac, under runs/qa/flows/<owner>-<repo>/issue-<n>/criterion-<k>.yaml.
+
+A kept flow starts with its criterion's words. A flow is matched by the criterion's number, so when the words
+change, the flow isn't replayed and the agent checks the criterion again: an old flow could pass another criterion.
 """
 
 from __future__ import annotations
@@ -36,6 +39,28 @@ def flows_dir(repo: str, number: int) -> Path:
 
 def flow_path(repo: str, number: int, criterion: int) -> Path:
     return flows_dir(repo, number) / f"criterion-{criterion}.yaml"
+
+
+def criterion_line(criterion: str) -> str:
+    """A kept flow's first line: the words of the criterion it checks."""
+    return "# criterion: " + " ".join(criterion.split())
+
+
+def kept_flow(repo: str, number: int, k: int, criterion: str) -> tuple[Path | None, str]:
+    """The flow kept for criterion k, when it was written for these words: (its path, ""), else (None, why it isn't replayed)."""
+    path = flow_path(repo, number, k)
+    if not path.is_file():
+        return None, ""
+    first = path.read_text(encoding="utf-8").split("\n", 1)[0]
+    if first == criterion_line(criterion):
+        return path, ""
+    why = "was written for other words in this criterion" if first.startswith("# criterion: ") else "doesn't name its criterion"
+    return None, f"The kept flow {path.name} {why}, so it wasn't replayed."
+
+
+def keep_flow(repo: str, number: int, k: int, criterion: str, text: str) -> Path:
+    """Keep a flow that passed its replay, for criterion k with these words."""
+    return keep(flow_path(repo, number, k), criterion_line(criterion) + "\n" + text)
 
 
 def normalize(text: str, package: str) -> tuple[str | None, list[str]]:

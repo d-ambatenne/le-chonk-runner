@@ -33,6 +33,7 @@ def test_an_issue_becomes_a_harbor_task(tmp_path: Path) -> None:
     assert "checked out in /app" in instruction and "- A second tap jumps again" in instruction
     assert "kotlin-agent-skills" not in instruction and "1.2" not in instruction  # no skills or Slack thread for the agent
     assert "## Testability" in instruction and '"4 of 5 hearts"' in instruction and "FLAG_DEBUGGABLE" in instruction
+    assert '"jumps: 3"' in instruction and "can be over before it is read" in instruction  # brief events leave a count
 
     repo = task / "environment" / "repo"
     assert (repo / "shared" / "src" / "Game.kt").is_file() and (repo / ".git").is_dir()

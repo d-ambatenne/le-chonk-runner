@@ -14,7 +14,7 @@ from fake_github import FakeGitHub
 from fakes import FakeClient, call
 from le_chonk_eval.demo.github import GitHub
 from le_chonk_eval.qa import run as qa_run
-from le_chonk_eval.qa.flows import FlowResult, flow_path
+from le_chonk_eval.qa.flows import FlowResult, criterion_line, flow_path
 from le_chonk_eval.qa.inputs import QaInput
 
 REPO, TAG = "denis/le-chonk-game", "issue-1-20261021-202046"
@@ -26,6 +26,15 @@ BODY = """Build Le Chonk Runner.
 - He has 5 hearts; each hit removes one heart
 """
 RESTART_FLOW = 'appId: x\n---\n- launchApp\n- tapOn: "(?i)restart"\n'
+CRITERIA = [line[2:] for line in BODY.splitlines() if line.startswith("- ")]
+
+
+def kept(k: int, text: str, words: str | None = None) -> Path:
+    """A flow an earlier run kept for criterion k, written for the criterion's words or for other ones."""
+    path = flow_path(REPO, 1, k)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(criterion_line(CRITERIA[k - 1] if words is None else words) + "\n" + text)
+    return path
 
 
 class FakeMaestro:
@@ -56,9 +65,7 @@ def github(tmp_path: Path) -> FakeGitHub:
 
 
 async def test_a_run_replays_kept_flows_and_explores_the_rest(github: FakeGitHub, tmp_path: Path) -> None:
-    kept = flow_path(REPO, 1, 1)
-    kept.parent.mkdir(parents=True)
-    kept.write_text("appId: dev.dambatenne.lechonk\n---\n- launchApp\n")  # criterion 1 was checked by an earlier run
+    kept(1, "appId: dev.dambatenne.lechonk\n---\n- launchApp\n")  # criterion 1 was checked by an earlier run
     client = FakeClient([
         [call("a1", "wait", seconds=12), call("a2", "ui_tree")],
         [call("a3", "tap", element="e4"), call("a4", "ui_tree")],
@@ -77,7 +84,7 @@ async def test_a_run_replays_kept_flows_and_explores_the_rest(github: FakeGitHub
     first, second, third = result["verdicts"]
     assert first["source"] == "flow" and first["verdict"] == "pass" and first["blocking"]  # no conversation for it
     assert second["verdict"] == "pass" and second["flow_file"] == str(flow_path(REPO, 1, 2))
-    assert flow_path(REPO, 1, 2).read_text().startswith(f"appId: {PACKAGE}\n")  # replayed once, then kept
+    assert flow_path(REPO, 1, 2).read_text().startswith(f"{criterion_line(CRITERIA[1])}\nappId: {PACKAGE}\n")  # replayed, then kept
     assert third["verdict"] == "fail" and third["blocking"] and third["screenshots"] == ["c3-1.png"]
     assert maestro.replayed == ["criterion-1.yaml", "criterion-2.yaml"]
     assert result["blocking"] == [3] and (result["passed"], result["failed"], result["cant_check"]) == (2, 1, 0)
@@ -91,14 +98,33 @@ async def test_a_run_replays_kept_flows_and_explores_the_rest(github: FakeGitHub
 
 async def test_a_failing_kept_flow_sends_the_agent_back(github: FakeGitHub) -> None:
     for k in (1, 2, 3):
-        flow_path(REPO, 1, k).parent.mkdir(parents=True, exist_ok=True)
-        flow_path(REPO, 1, k).write_text(RESTART_FLOW)
+        kept(k, RESTART_FLOW)
     client = FakeClient([[call("a1", "report_verdict", verdict="fail", check="tree", evidence="No GAME OVER after 30 s.")]])
     result = await qa_run.run_qa(QaInput(repo=REPO, number=1, release=TAG, serial="emulator-5554"),
                                  github=GitHub("t0ken", transport=github.transport()), client=client,
                                  make_device=lambda serial: FakeDevice(), make_maestro=FakeMaestro({"criterion-1.yaml"}))
     first = result["verdicts"][0]
     assert first["source"] == "agent" and first["verdict"] == "fail" and "The kept flow criterion-1.yaml failed" in first["notes"][0]
+
+
+async def test_a_flow_kept_for_other_words_is_not_replayed(github: FakeGitHub) -> None:
+    kept(1, RESTART_FLOW, words="The game-over screen shows the best score")  # the criterion was edited since
+    flow_path(REPO, 1, 2).write_text(RESTART_FLOW)  # kept before flows named their criterion
+    kept(3, RESTART_FLOW)
+    client = FakeClient([
+        [call("a1", "report_verdict", verdict="pass", check="tree", evidence="GAME OVER with the score.", flow=RESTART_FLOW)],
+        [call("b1", "report_verdict", verdict="pass", check="tree", evidence="RESTART started a new run.")],
+    ])
+    maestro = FakeMaestro()
+    result = await qa_run.run_qa(QaInput(repo=REPO, number=1, release=TAG, serial="emulator-5554", label=False),
+                                 github=GitHub("t0ken", transport=github.transport()), client=client,
+                                 make_device=lambda serial: FakeDevice(), make_maestro=maestro)
+    first, second, third = result["verdicts"]
+    assert first["source"] == "agent" and "was written for other words in this criterion" in first["notes"][0]
+    assert second["source"] == "agent" and "doesn't name its criterion" in second["notes"][0]
+    assert third["source"] == "flow"  # same words: replayed, no conversation
+    assert flow_path(REPO, 1, 1).read_text().startswith(criterion_line(CRITERIA[0]) + "\n")  # kept again, for the new words
+    assert maestro.replayed == ["criterion-1.yaml", "criterion-3.yaml"]  # the agent's new flow, then the kept one
 
 
 async def test_a_release_without_an_apk_or_criteria_stops_the_run(github: FakeGitHub) -> None:
@@ -312,3 +338,21 @@ def test_the_cli_marks_from_a_saved_run_and_runs_can_skip_marking(monkeypatch: p
     monkeypatch.setattr(qa_run, "run_qa", fake_run)
     cli.main(["qa", "run", "--repo", REPO, "--issue", "1", "--release", TAG, "--no-label"])
     assert seen[0].label is False
+
+
+async def test_the_agent_reads_its_issue_and_others_but_never_a_pull_request(github: FakeGitHub) -> None:
+    github.issues[REPO][0]["body"] = BODY + '\n<!-- le-chonk {"slack": {"channel": "C1", "thread": "1.2"}} -->\n'
+    github.issues[REPO].append({"number": 2, "title": "Sounds", "body": "Part of #1.\n\n### Acceptance criteria\n- A hit makes a sound\n",
+                                "state": "open", "labels": [], "html_url": f"https://github.com/{REPO}/issues/2"})
+    github.issues[REPO].append({"number": 3, "title": "#2: Sounds", "body": "Vibe's change", "state": "open", "labels": [],
+                                "pull_request": {"url": "x"}, "html_url": f"https://github.com/{REPO}/pull/3"})
+    client = FakeClient([[call(f"a{k}", "report_verdict", verdict="pass", check="tree", evidence="Seen.")] for k in (1, 2, 3)])
+    await qa_run.run_qa(QaInput(repo=REPO, number=1, release=TAG, serial="emulator-5554", label=False),
+                        github=GitHub("t0ken", transport=github.transport()), client=client,
+                        make_device=lambda serial: FakeDevice(), make_maestro=FakeMaestro())
+    start = client.inputs[0]["inputs"]
+    assert start.startswith("The issue, so you know what the app is about:\n\n#1 Build Le Chonk Runner") and "Build Le Chonk Runner." in start
+    assert "le-chonk" not in start.split("---")[0].replace("Le Chonk", "") and "C1" not in start  # no hidden metadata
+    read = qa_run.issue_reader(GitHub("t0ken", transport=github.transport()), REPO)
+    assert (await read(2)).startswith("#2 Sounds\n\nPart of #1.") and "A hit makes a sound" in await read(2)
+    assert await read(3) == "#3 is a pull request: QA reads only issues." and await read(9) == "There's no issue #9."

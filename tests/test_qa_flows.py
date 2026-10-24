@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from le_chonk_eval.qa.flows import Maestro, flow_path, normalize, parse_junit
+from le_chonk_eval.qa.flows import Maestro, criterion_line, flow_path, keep_flow, kept_flow, normalize, parse_junit
 
 FLOW = """appId: com.wrong.guess
 ---
@@ -63,3 +63,13 @@ async def test_a_replay_runs_maestro_on_the_emulator_and_reads_its_report(tmp_pa
 
 def test_flows_are_kept_per_issue_and_criterion() -> None:
     assert flow_path("denis/le-chonk-game", 1, 3).parts[-4:] == ("flows", "denis-le-chonk-game", "issue-1", "criterion-3.yaml")
+
+
+def test_a_flow_is_kept_with_its_criterion_and_replayed_only_for_the_same_words(tmp_path: Path) -> None:
+    assert kept_flow("denis/le-chonk-game", 1, 2, "He jumps") == (None, "")
+    path = keep_flow("denis/le-chonk-game", 1, 2, "Tapping  anywhere\nmakes him jump", "appId: x\n---\n- launchApp\n")
+    assert path.read_text() == "# criterion: Tapping anywhere makes him jump\nappId: x\n---\n- launchApp\n"
+    assert criterion_line(" Tapping anywhere makes him jump ") == "# criterion: Tapping anywhere makes him jump"
+    assert kept_flow("denis/le-chonk-game", 1, 2, "Tapping anywhere makes him jump") == (path, "")
+    missing, why = kept_flow("denis/le-chonk-game", 1, 2, "A double tap makes him jump twice")
+    assert missing is None and why == "The kept flow criterion-2.yaml was written for other words in this criterion, so it wasn't replayed."

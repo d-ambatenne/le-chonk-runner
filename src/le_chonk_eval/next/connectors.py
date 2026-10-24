@@ -18,6 +18,7 @@ from pathlib import Path
 from typing import Any
 
 from ..demo.github import GitHubError, parse_repo
+from ..demo.judge import judge_diff
 from .names import GITHUB, SLACK
 
 log = logging.getLogger(__name__)
@@ -336,12 +337,8 @@ class ConnectorGitHub:
 
 
 def diff_summary(diff: str, max_chars: int) -> dict[str, Any]:
-    """A PR's diff in the shape the judge reads: the files, a stat line and the diff, cut to size."""
-    files = re.findall(r"(?m)^diff --git a/(\S+) b/", diff)
-    added = len(re.findall(r"(?m)^\+(?!\+\+)", diff))
-    removed = len(re.findall(r"(?m)^-(?!--)", diff))
-    stat = f" {len(files)} files changed, {added} insertions(+), {removed} deletions(-)" if files else ""
-    return {"files": files, "stat": stat, "diff": diff[:max_chars], "truncated": len(diff) > max_chars}
+    """A PR's diff in the shape the judge reads: the code first, generated and binary files only named (demo/judge.py)."""
+    return judge_diff(diff, max_chars)
 
 
 # --- Slack ------------------------------------------------------------------------------------------------------

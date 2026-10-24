@@ -33,10 +33,13 @@ CHECKS = ("tree", "screenshot")
 
 INSTRUCTIONS = """You test an Android app on an emulator against one acceptance criterion of a GitHub issue. You see the running app through your tools, never its code.
 
+## What you know
+The prompt has the issue's title and description, so you know what the app and its parts are; check only the criterion it names. When the description points to another issue, such as "Part of #1", read_issue gives you that issue's title and description. You never see the code, the pull requests or the comments.
+
 ## How to check
 1. Start with ui_tree: the screen's texts, buttons and descriptions, each with a key such as e4 and its bounds.
 2. Do what the criterion describes: tap elements by key, wait, read the tree again. restart_app starts over.
-3. Prefer evidence from the tree. What the app draws (a game's characters, obstacles, hearts) may be missing from it: then use screenshots.
+3. Prefer evidence from the tree, and read it again while things move: a debug build may describe what it draws, such as a character's state or where the obstacles are. An event too brief for a tree read, such as a jump, may be counted there, such as "jumps: 3": compare the count before and after, and that's a tree check. When the tree doesn't have it, use screenshots.
 4. Things on screen move. A jump or an animation is over in under a second, and your next turn takes longer, so use tap_then_capture: it taps and takes the screenshot in one call. A screenshot arrives as an image in the next user message.
 5. When an app crashes or freezes, read logcat.
 
@@ -84,6 +87,8 @@ TOOLS = [
           {"seconds": {"type": "number", "description": "0 to 60"}}, ["seconds"]),
     _tool("logcat", "The app's latest log lines and any crash."),
     _tool("restart_app", "Stop the app and start it again from its launcher."),
+    _tool("read_issue", "Another issue of this repository: its title and description. For an issue this one points to, such as 'Part of #1'.",
+          {"number": {"type": "integer", "description": "The issue's number"}}, ["number"]),
     _tool("report_verdict", "Report the criterion's verdict, once, at the end.", {
         "verdict": {"type": "string", "enum": list(VERDICTS)},
         "check": {"type": "string", "enum": list(CHECKS), "description": "tree: the evidence is text in the UI tree; screenshot: you judged pixels"},
@@ -134,6 +139,7 @@ class QaTools:
     last_tree: list[Element] = field(default_factory=list)
     saved: list[str] = field(default_factory=list)
     reported: dict[str, Any] | None = None
+    read_issue: Callable[[int], Awaitable[str]] | None = None  # another issue's title and description, by its number
     errors: dict[str, int] = field(default_factory=dict)  # the device's failures per tool, in this criterion
     broken: str = ""  # set when a tool keeps failing: the device is broken, so the check stops
 
@@ -201,6 +207,15 @@ class QaTools:
         self.last_tree = []
         return ToolResult("The app started again.")
 
+    async def _read_issue(self, number: Any = None) -> ToolResult:
+        if self.read_issue is None:
+            return ToolResult("Other issues can't be read in this run.")
+        try:
+            wanted = int(number)
+        except (TypeError, ValueError):
+            raise TypeError("number must be an issue's number, such as 1") from None
+        return ToolResult(await self.read_issue(wanted))
+
     async def _report_verdict(self, verdict: Any = "", check: Any = "", evidence: Any = "", flow: Any = "") -> ToolResult:
         if verdict not in VERDICTS or check not in CHECKS:
             return ToolResult(f"verdict must be one of {', '.join(VERDICTS)}, and check one of {', '.join(CHECKS)}: call it again.")
@@ -226,9 +241,10 @@ def tool_inputs(results: list[tuple[str, ToolResult]]) -> list[Any]:
     return entries
 
 
-def criterion_prompt(number: int, criterion: str, package: str) -> str:
-    return (f"The app {package} is running on the emulator: use {package} as a flow's appId. "
-            f"Check acceptance criterion {number}:\n\n{criterion}\n\nUse your tools, then call report_verdict.")
+def criterion_prompt(number: int, criterion: str, package: str, issue: str = "") -> str:
+    about = f"The issue, so you know what the app is about:\n\n{issue.strip()}\n\n---\n\n" if issue.strip() else ""
+    return (f"{about}The app {package} is running on the emulator: use {package} as a flow's appId. "
+            f"Check acceptance criterion {number}, and only this one:\n\n{criterion}\n\nUse your tools, then call report_verdict.")
 
 
 def qa_model(model: str | None = None) -> str:
@@ -251,13 +267,15 @@ async def flow_problem(check_flow: Callable[[str], Awaitable[str | None]] | None
 
 
 async def check_criterion(client: Any, agent_id: str, tools: QaTools, number: int, criterion: str, max_rounds: int = MAX_ROUNDS,
-                          check_flow: Callable[[str], Awaitable[str | None]] | None = None, flow_fixes: int = FLOW_FIXES) -> Verdict:
+                          check_flow: Callable[[str], Awaitable[str | None]] | None = None, flow_fixes: int = FLOW_FIXES,
+                          issue: str = "") -> Verdict:
     """One conversation: the agent explores until it reports a verdict, or runs out of rounds.
 
     check_flow replays a passing tree check's flow and says what went wrong. Then the agent gets the reason as
     report_verdict's answer and may fix the flow, flow_fixes times; the verdict stands either way."""
     tools.criterion, tools.reported, tools.saved, tools.last_tree, tools.errors, tools.broken = number, None, [], [], {}, ""
-    response = await client.beta.conversations.start_async(agent_id=agent_id, inputs=criterion_prompt(number, criterion, tools.package), store=True)
+    response = await client.beta.conversations.start_async(agent_id=agent_id, inputs=criterion_prompt(number, criterion, tools.package, issue),
+                                                           store=True)
     conversation = response.conversation_id
     reminded = False
     rounds = fixes = 0

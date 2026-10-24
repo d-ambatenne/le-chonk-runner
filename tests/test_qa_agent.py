@@ -145,3 +145,25 @@ async def test_a_tool_that_keeps_failing_stops_the_check_instead_of_a_screenshot
     found = await check_criterion(client, "ag_1", tools(tmp_path, device), 4, "Game over shows the score")
     assert found.verdict == "cant_check" and found.environment.startswith("ui_tree failed 3 times") and "137" in found.environment
     assert len(client.inputs) == 3  # it stopped: no fourth round, and no screenshot verdict
+
+
+async def test_the_agent_gets_its_issue_and_can_read_the_one_it_points_to(tmp_path: Path) -> None:
+    asked: list[int] = []
+
+    async def read_issue(number: int) -> str:
+        asked.append(number)
+        return "#1 Build Le Chonk Runner\n\nLe Chonk, a chonky orange pixel-art cat, runs by himself."
+
+    qa = QaTools(FakeDevice(), PACKAGE, f"{PACKAGE}/.MainActivity", tmp_path / "screenshots", read_issue=read_issue)
+    client = FakeClient([
+        [call("c1", "read_issue", number=1)],
+        [call("c2", "report_verdict", verdict="pass", check="screenshot", evidence="The background has three layers.")],
+    ])
+    issue = "#4 Parallax background\n\nPart of #1.\n\nAcceptance criteria:\n- The background scrolls in layers"
+    found = await check_criterion(client, "ag_1", qa, 1, "The background scrolls in layers", issue=issue)
+    start, after = client.inputs
+    assert start["inputs"].startswith("The issue, so you know what the app is about:\n\n#4 Parallax background") and "only this one" in start["inputs"]
+    assert asked == [1] and "orange pixel-art cat" in after["inputs"][0].result and found.verdict == "pass"
+    lone = QaTools(FakeDevice(), PACKAGE, None, tmp_path / "s")
+    assert (await lone.call("read_issue", {"number": 1})).text == "Other issues can't be read in this run."
+    assert (await qa.call("read_issue", {"number": "one"})).text.startswith("Wrong arguments for read_issue")

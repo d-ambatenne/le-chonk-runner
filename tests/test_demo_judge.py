@@ -11,7 +11,7 @@ from typing import Any
 import pytest
 
 from conftest import write_tree
-from le_chonk_eval.demo.judge import judge, judge_trial, normalize, project_diff
+from le_chonk_eval.demo.judge import judge, judge_diff, judge_trial, normalize, project_diff
 from le_chonk_eval.demo.issues import Task
 from le_chonk_eval.utils.compare import compare
 from le_chonk_eval.utils.results import TASK_DONE, read_job
@@ -61,6 +61,42 @@ def test_the_diff_is_the_change_from_the_base_commit(tmp_path: Path) -> None:
     write_tree(same, {"shared/src/Game.kt": "class Game {\n  fun jump() {}\n}\n", "README.md": "# Game\n"})
     assert project_diff(clone, same)["files"] == []
     assert subprocess.run(["git", "status", "--porcelain"], cwd=clone, capture_output=True, text=True).stdout == ""  # base untouched
+
+
+def file_diff(path: str, lines: list[str]) -> str:
+    body = "".join(f"+{line}\n" for line in lines)
+    return f"diff --git a/{path} b/{path}\nnew file mode 100644\n--- /dev/null\n+++ b/{path}\n@@ -0,0 +1,{len(lines)} @@\n{body}"
+
+
+async def test_the_judge_sees_the_code_before_wrappers_and_build_files() -> None:
+    # A new project's diff, in git's order: wrappers, the Xcode project and icons first, the code at the end
+    diff = (file_diff("androidApp/res/mipmap-hdpi/ic_launcher.png", []).replace("@@ -0,0 +1,0 @@\n", "Binary files /dev/null and b/x differ\n")
+            + file_diff("iosApp/module.xcodeproj/project.pbxproj", ["/* xcode */"] * 200)
+            + file_diff("kotlin", ["#!/bin/sh"] * 400)
+            + file_diff("libs.versions.toml", ["[versions]", "compose = '1.9'"])
+            + file_diff("shared/composeResources/drawable/cat.xml", ["<vector/>"] * 300)
+            + file_diff("shared/src/Game.kt", ["class Game {", "  var jumps = 0", "}"])
+            + file_diff("shared/test/GameTest.kt", ["class GameTest"]))
+    seen = judge_diff(diff, 1000)
+    assert seen["files"][0].endswith("ic_launcher.png") and len(seen["files"]) == 7
+    assert seen["left_out"] == ["androidApp/res/mipmap-hdpi/ic_launcher.png", "iosApp/module.xcodeproj/project.pbxproj", "kotlin"]
+    assert seen["not_shown"] == ["shared/composeResources/drawable/cat.xml"] and seen["truncated"]
+    order = [seen["diff"].index(f"b/{name}") for name in ("shared/src/Game.kt", "shared/test/GameTest.kt", "libs.versions.toml")]
+    assert order == sorted(order) and "#!/bin/sh" not in seen["diff"] and len(seen["diff"]) <= 1000
+    assert " kotlin | +400 -0" in seen["stat"] and "ic_launcher.png | binary" in seen["stat"]
+    assert seen["stat"].endswith(" 7 files changed, 906 insertions(+), 0 deletions(-)")
+
+    client = FakeChat({"criteria": [{"met": True}, {"met": True}], "verdict": "done"})
+    await judge(client, "m", TASK, {}, seen)
+    prompt = client.calls[0]["messages"][1]["content"]
+    assert "Named only, as generated, IDE or binary files: androidApp/res/mipmap-hdpi/ic_launcher.png, " in prompt
+    assert "Not shown, to fit: shared/composeResources/drawable/cat.xml." in prompt and "cut to fit" not in prompt
+
+    everything = judge_diff(diff)
+    assert not everything["not_shown"] and not everything["truncated"] and "<vector/>" in everything["diff"]
+    odd = judge_diff("something that isn't a git diff")
+    assert odd["files"] == ["(the diff)"] and odd["diff"] == "something that isn't a git diff"
+    assert judge_diff("") == {"files": [], "stat": "", "diff": "", "left_out": [], "not_shown": [], "truncated": False}
 
 
 async def test_the_judge_reads_the_task_and_the_change() -> None:

@@ -13,6 +13,7 @@ The run only reports. Filing issues and holding the merge come with the PR loop.
 from __future__ import annotations
 
 import json
+from collections.abc import Awaitable, Callable
 from contextlib import AbstractAsyncContextManager, nullcontext
 from pathlib import Path
 from typing import Any
@@ -21,7 +22,7 @@ from ..utils.paths import runs_dir
 from .agent import QaTools, Verdict, check_criterion, ensure_qa_agent, verdict
 from .device import AdbError, Device
 from .emulator import Emulator, apk_package, tool
-from .flows import Maestro, flow_path, keep, normalize
+from .flows import Maestro, keep, keep_flow, kept_flow, normalize
 from .inputs import QaInput
 
 ICONS = {"pass": "pass", "fail": "FAIL", "cant_check": "n/a "}
@@ -37,7 +38,37 @@ def pick_apk(assets: list[dict[str, Any]]) -> dict[str, Any] | None:
     return next((a for a in apks if "debug" in a["name"].lower()), apks[0] if apks else None)
 
 
-async def criteria_and_apk(github: Any, repo: str, number: int, release: str, out: Path) -> tuple[str, list[str], Path]:
+def issue_text(number: int, task: Any) -> str:
+    """An issue as the QA agent reads it: its title and description, as Vibe and the judge read them, without metadata."""
+    return f"#{number} {task.title}\n\n{task.brief()}".strip()
+
+
+def issue_reader(github: Any, repo: str) -> Callable[[int], Awaitable[str]]:
+    """The QA agent's read_issue: another issue of the same repository, its title and description.
+
+    Never a pull request or a comment, so the agent still sees no code. Without a client, it makes one per call."""
+    async def read(number: int) -> str:
+        from ..demo.github import GitHub, GitHubError
+        from ..demo.issues import Task
+
+        owned = github is None
+        client = github or GitHub()
+        try:
+            found = await client.issue(repo, number)
+        except GitHubError as exc:
+            return f"There's no issue #{number}." if exc.status == 404 else f"GitHub didn't answer: {str(exc)[:200]}"
+        finally:
+            if owned:
+                await client.close()
+        if "pull_request" in found:
+            return f"#{number} is a pull request: QA reads only issues."
+        return issue_text(number, Task.from_issue(found["title"], found.get("body")))[:4000]
+
+    return read
+
+
+async def criteria_and_apk(github: Any, repo: str, number: int, release: str, out: Path) -> tuple[str, list[str], Path, str]:
+    """The issue's title and criteria, the release's APK, and the issue as the QA agent reads it."""
     from ..demo.issues import Task
 
     issue = await github.issue(repo, number)
@@ -51,7 +82,7 @@ async def criteria_and_apk(github: Any, repo: str, number: int, release: str, ou
     if asset is None:
         raise ValueError(f"Release {release} has no APK")
     apk = await github.download_asset(repo, asset, out / "apk" / asset["name"])
-    return task.title, task.criteria, apk
+    return task.title, task.criteria, apk, issue_text(number, task)
 
 
 async def install(device: Device, apk: Path, package_of: Any = apk_package) -> tuple[str, str | None]:
@@ -90,9 +121,10 @@ def not_checked(k: int, criterion: str, broken: str, notes: list[str] | None = N
 
 
 async def check_all(client: Any, device: Device, maestro: Maestro, repo: str, number: int, criteria: list[str], package: str,
-                    activity: str | None, out: Path, model: str | None = None) -> list[Verdict]:
+                    activity: str | None, out: Path, model: str | None = None, issue: str = "",
+                    read_issue: Callable[[int], Awaitable[str]] | None = None) -> list[Verdict]:
     """Every criterion, in order. A broken device stops the checks: what's left isn't checked, rather than judged on it."""
-    tools = QaTools(device, package, activity, out / "screenshots")
+    tools = QaTools(device, package, activity, out / "screenshots", read_issue=read_issue)
     agent_id: str | None = None
     verdicts: list[Verdict] = []
     broken = ""
@@ -100,9 +132,9 @@ async def check_all(client: Any, device: Device, maestro: Maestro, repo: str, nu
         if broken:
             verdicts.append(not_checked(k, criterion, broken))
             continue
-        kept = flow_path(repo, number, k)
-        notes = []
-        if kept.is_file():
+        kept, stale = kept_flow(repo, number, k, criterion)
+        notes = [stale] if stale else []
+        if kept:
             replayed = await maestro.replay(kept, out / "flows")
             if replayed.passed:
                 verdicts.append(verdict(k, criterion, "pass", "tree", source="flow", flow_file=str(kept),
@@ -117,13 +149,13 @@ async def check_all(client: Any, device: Device, maestro: Maestro, repo: str, nu
         agent_id = agent_id or await ensure_qa_agent(client, model)
         kept_file: dict[int, str] = {}
 
-        async def check_flow(flow: str, k: int = k) -> str | None:
-            problem, saved = await try_flow(flow, maestro, repo, number, k, package, out)
+        async def check_flow(flow: str, k: int = k, criterion: str = criterion) -> str | None:
+            problem, saved = await try_flow(flow, maestro, repo, number, k, package, out, criterion_text=criterion)
             if saved:
                 kept_file[k] = saved
             return problem
 
-        found = await check_criterion(client, agent_id, tools, k, criterion, check_flow=check_flow)
+        found = await check_criterion(client, agent_id, tools, k, criterion, check_flow=check_flow, issue=issue)
         found.notes = notes + found.notes
         found.flow_file = kept_file.get(k)
         broken = found.environment
@@ -131,7 +163,8 @@ async def check_all(client: Any, device: Device, maestro: Maestro, repo: str, nu
     return verdicts
 
 
-async def try_flow(flow: str, maestro: Maestro, repo: str, number: int, criterion: int, package: str, out: Path) -> tuple[str | None, str | None]:
+async def try_flow(flow: str, maestro: Maestro, repo: str, number: int, criterion: int, package: str, out: Path, *,
+                   criterion_text: str) -> tuple[str | None, str | None]:
     """Replay the agent's flow once: (None, where it's kept) when it passes, else (what went wrong, None)."""
     text, problems = normalize(flow, package)
     if text is None:
@@ -139,7 +172,7 @@ async def try_flow(flow: str, maestro: Maestro, repo: str, number: int, criterio
     draft = keep(out / "flows" / f"criterion-{criterion}.yaml", text)
     replayed = await maestro.replay(draft, out / "flows")
     if replayed.passed:
-        return None, str(keep(flow_path(repo, number, criterion), text))
+        return None, str(keep_flow(repo, number, criterion, criterion_text, text))
     return f"it failed on replay: {replayed.message}", None
 
 
@@ -254,7 +287,7 @@ async def run_qa(params: QaInput, *, github: Any = None, client: Any = None, emu
     owned_github = github is None
     github = github or GitHub()
     try:
-        title, criteria, apk = await criteria_and_apk(github, repo, params.number, params.release, out)
+        title, criteria, apk, issue = await criteria_and_apk(github, repo, params.number, params.release, out)
     finally:
         if owned_github:
             await github.close()
@@ -271,7 +304,8 @@ async def run_qa(params: QaInput, *, github: Any = None, client: Any = None, emu
         device = make_device(serial)
         await device.clear_logs()
         package, activity = await install(device, apk)
-        verdicts = await check_all(client, device, make_maestro(serial), repo, params.number, criteria, package, activity, out, params.model)
+        verdicts = await check_all(client, device, make_maestro(serial), repo, params.number, criteria, package, activity, out, params.model,
+                                   issue=issue, read_issue=issue_reader(None if owned_github else github, repo))
     result = summary(repo, params.number, params.release, title, verdicts, out, package)
     if params.label:
         result["issue"] = await _mark(github if not owned_github else None, result)
