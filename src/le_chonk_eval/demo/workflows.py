@@ -57,7 +57,8 @@ def make_judge_client() -> Any:
     from mistralai.client.utils import BackoffStrategy, RetryConfig
 
     retry = RetryConfig("backoff", BackoffStrategy(2_000, 60_000, 1.8, 600_000), True, ["429", "5XX"])
-    return Mistral(api_key=os.environ.get("MISTRAL_API_KEY"), retry_config=retry)
+    # Without timeout_ms every request gets httpx's 5 s (FRICTIONS.md, row 39)
+    return Mistral(api_key=os.environ.get("MISTRAL_API_KEY"), retry_config=retry, timeout_ms=300_000)
 
 
 class SmokeJudge:

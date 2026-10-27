@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import httpx
 import mistralai.workflows as workflows
 import pytest
 
@@ -125,6 +126,45 @@ async def test_a_flow_kept_for_other_words_is_not_replayed(github: FakeGitHub) -
     assert third["source"] == "flow"  # same words: replayed, no conversation
     assert flow_path(REPO, 1, 1).read_text().startswith(criterion_line(CRITERIA[0]) + "\n")  # kept again, for the new words
     assert maestro.replayed == ["criterion-1.yaml", "criterion-3.yaml"]  # the agent's new flow, then the kept one
+
+
+class TimingOutClient(FakeClient):
+    """The model's API times out on one request, after the client's own retries."""
+
+    def __init__(self, script: list[list[Any]], fail_on: int) -> None:
+        super().__init__(script)
+        self.fail_on = fail_on
+
+    async def _append(self, **kwargs: Any) -> Any:
+        self.inputs.append(kwargs)
+        if len(self.inputs) == self.fail_on:
+            raise httpx.ReadTimeout("timed out")
+        return self._next()
+
+
+async def test_a_model_call_that_fails_leaves_its_criterion_unchecked_and_the_run_goes_on(github: FakeGitHub) -> None:
+    client = TimingOutClient([
+        [call("a1", "report_verdict", verdict="pass", check="screenshot", evidence="GAME OVER with the score.")],
+        [call("b1", "ui_tree")],  # its tool results are the request that times out
+        [call("c1", "report_verdict", verdict="fail", check="screenshot", evidence="No hearts on screen.")],
+    ], fail_on=3)
+    result = await qa_run.run_qa(QaInput(repo=REPO, number=1, release=TAG, serial="emulator-5554", label=False),
+                                 github=GitHub("t0ken", transport=github.transport()), client=client,
+                                 make_device=lambda serial: FakeDevice(), make_maestro=FakeMaestro())
+    first, second, third = result["verdicts"]
+    assert first["verdict"] == "pass" and third["verdict"] == "fail"  # the criteria after it are still checked
+    assert second["verdict"] == "cant_check" and second["evidence"].startswith(qa_run.API_FAILED) and "ReadTimeout" in second["evidence"]
+    assert result["environment_errors"] == []  # the device is fine: not a broken run
+    assert "The model's API failed on some criteria. Run again" in qa_run.table(result)
+
+
+def test_model_calls_wait_minutes_not_httpx_five_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    from le_chonk_eval.demo.runner import _mistral
+    from le_chonk_eval.demo.workflows import make_judge_client
+
+    monkeypatch.setenv("MISTRAL_API_KEY", "k")
+    assert _mistral().sdk_configuration.timeout_ms == 300_000
+    assert make_judge_client().sdk_configuration.timeout_ms == 300_000
 
 
 async def test_a_release_without_an_apk_or_criteria_stops_the_run(github: FakeGitHub) -> None:

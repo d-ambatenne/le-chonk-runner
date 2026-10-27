@@ -18,6 +18,9 @@ log = logging.getLogger(__name__)
 _local_watchers: dict[str, asyncio.Task] = {}
 
 
+REQUEST_TIMEOUT_MS = 300_000  # a model call may take minutes; the SDK's default is httpx's 5 s
+
+
 def _mistral() -> Any:
     from mistralai.client import Mistral
     from mistralai.client.utils import BackoffStrategy, RetryConfig
@@ -25,7 +28,8 @@ def _mistral() -> Any:
     if not os.environ.get("MISTRAL_API_KEY"):
         raise SystemExit("MISTRAL_API_KEY is not set. Put it in .env (see .env.example).")
     retry = RetryConfig("backoff", BackoffStrategy(1_000, 30_000, 1.8, 300_000), True, ["429", "5XX"])
-    return Mistral(api_key=os.environ["MISTRAL_API_KEY"], retry_config=retry)
+    # Without timeout_ms every request gets httpx's 5 s, less than a model takes to answer with screenshots (FRICTIONS.md, row 39)
+    return Mistral(api_key=os.environ["MISTRAL_API_KEY"], retry_config=retry, timeout_ms=REQUEST_TIMEOUT_MS)
 
 
 async def start_watcher_cloud(params: WatchInput, client: Any | None = None) -> str:

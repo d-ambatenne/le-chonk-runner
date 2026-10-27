@@ -51,7 +51,7 @@ def test_the_vibe_command_for_an_issue(tmp_path: Path) -> None:
     command = run_command("issue-7-run", "skill", attempts=1, max_cost_usd=3, harbor=["harbor"], task=tmp_path, agent=VIBE,
                           skills=[skill], agent_env=["VIBE_BACKEND=mistral"])
     text = " ".join(command)
-    assert f"-p {tmp_path} -a vibe -m mistral/mistral-large-4 -k 1" in text
+    assert f"-p {tmp_path} -a le_chonk_eval.agents.vibe_agent:LeChonkVibe -m mistral/mistral-large-4 -k 1" in text
     assert f"--skill {skill}" in text and "--ak max_price=3" in text and "--ae VIBE_BACKEND=mistral" in text
     assert "--skill" not in run_command("issue-7-ab-no-skill", "no-skill", harbor=["harbor"], task=tmp_path, agent=VIBE, skills=[skill])
 

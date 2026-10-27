@@ -1,7 +1,8 @@
 """The Harbor commands for one arm: start its job, or resume it.
 
 One arm is one Harbor job: the same task, agent and model, with or without --skill. The A/B uses the
-Studio agent on tasks/le-chonk-runner; the demo uses Harbor's built-in Vibe agent on a task made from an issue.
+Studio agent on tasks/le-chonk-runner; the demo uses Harbor's Vibe agent, with the two model settings it leaves out
+(agents/vibe_agent.py), on a task made from an issue.
 """
 
 from __future__ import annotations
@@ -12,7 +13,7 @@ from ..utils.paths import env_file, harbor_bin, jobs_dir, skill_dir, task_dir
 from ..utils.results import ARMS
 
 AGENT = "le_chonk_eval.agents.studio_agent:StudioAgent"
-VIBE = "vibe"
+VIBE = "le_chonk_eval.agents.vibe_agent:LeChonkVibe"
 # The two agents name their cost limit differently.
 COST_LIMIT_OPTION = {AGENT: "max_cost_usd", VIBE: "max_price"}
 

@@ -115,6 +115,16 @@ async def device_problem(device: Device, package: str, activity: str | None) -> 
     return problem
 
 
+API_FAILED = "Not checked: the model's API failed after its retries"
+
+
+def model_api_error(exc: BaseException) -> bool:
+    """A failure of the model's API, after the client's own retries: a timeout, a dropped connection or an error status."""
+    import httpx
+
+    return isinstance(exc, httpx.HTTPError) or type(exc).__module__.startswith("mistralai")
+
+
 def not_checked(k: int, criterion: str, broken: str, notes: list[str] | None = None) -> Verdict:
     return verdict(k, criterion, "cant_check", "screenshot", evidence=f"Not checked: the device broke ({broken}).", environment=broken,
                    notes=notes or [])
@@ -155,7 +165,14 @@ async def check_all(client: Any, device: Device, maestro: Maestro, repo: str, nu
                 kept_file[k] = saved
             return problem
 
-        found = await check_criterion(client, agent_id, tools, k, criterion, check_flow=check_flow, issue=issue)
+        try:
+            found = await check_criterion(client, agent_id, tools, k, criterion, check_flow=check_flow, issue=issue)
+        except Exception as exc:
+            if not model_api_error(exc):
+                raise
+            verdicts.append(verdict(k, criterion, "cant_check", "screenshot", notes=notes,
+                                    evidence=f"{API_FAILED} ({type(exc).__name__}: {str(exc)[:200] or 'no detail'})."))
+            continue
         found.notes = notes + found.notes
         found.flow_file = kept_file.get(k)
         broken = found.environment
@@ -196,6 +213,8 @@ def table(result: dict[str, Any]) -> str:
         lines.append(f"  {ICONS[v['verdict']]}  {v['number']}. {v['criterion'][:70]}  ({kind}){block}")
     for problem in result.get("environment_errors") or []:
         lines.append(f"The device broke, so the run stopped: {problem}\nRun again on a fresh emulator: without --serial, QA boots lechonk-qa from its clean snapshot.")
+    if any(str(v.get("evidence") or "").startswith(API_FAILED) for v in result["verdicts"]):
+        lines.append("The model's API failed on some criteria. Run again: kept flows replay, and only the criteria without one call the model.")
     if result.get("issue"):
         lines.append(result["issue"])
     return "\n".join(lines)
