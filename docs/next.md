@@ -85,7 +85,9 @@ other one with its state and stops ([friction 27](../FRICTIONS.md#the-demo)).
 
 An agent installs a release's APK on an emulator and checks it against the issue's acceptance criteria. It sees
 the issue's title and description with each criterion, and the running app. It can read other issues, such as the
-one an issue is part of, but never the code, the pull requests or the comments. Each criterion gets pass, fail or can't check. A check read
+one an issue is part of, but never the code, the pull requests or the comments. Each criterion gets pass, fail or can't check. A criterion
+about the code, such as files or a licence, gets can't check at once; when only part of it is, the agent checks the part the
+app shows, and that part can fail it. A check read
 from the screen's UI tree would block a merge; one judged from a screenshot wouldn't. For a tree check, the agent
 writes a Maestro flow: later runs replay the flows, and the agent explores only criteria without one, or whose flow
 failed. A new flow is replayed before it's kept; when that fails, the agent gets the reason and may fix the flow

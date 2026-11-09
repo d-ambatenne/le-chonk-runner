@@ -87,6 +87,8 @@ async def test_the_studio_agent(monkeypatch: pytest.MonkeyPatch) -> None:
     assert created["name"] == AGENT_NAME == "le-chonk-qa" and created["model"] == "mistral-large-4"
     assert {t["function"]["name"] for t in created["tools"]} >= {"ui_tree", "tap_then_capture", "report_verdict"}
     assert "never its code" in created["instructions"]
+    assert "at once with cant_check" in created["instructions"]  # a criterion about the code costs no exploring
+    assert "check the part the app shows" in created["instructions"]
     monkeypatch.setenv("LECHONK_QA_MODEL", "mistral/mistral-medium-3")
     await ensure_qa_agent(client)
     assert client.updated[0]["model"] == "mistral-medium-3"

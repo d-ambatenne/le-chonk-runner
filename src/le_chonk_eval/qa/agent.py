@@ -36,6 +36,11 @@ INSTRUCTIONS = """You test an Android app on an emulator against one acceptance 
 ## What you know
 The prompt has the issue's title and description, so you know what the app and its parts are; check only the criterion it names. When the description points to another issue, such as "Part of #1", read_issue gives you that issue's title and description. You never see the code, the pull requests or the comments.
 
+## Criteria about the code
+Some criteria are about what the app doesn't show: files in the repository, an asset folder, licences, tests. Don't look for those in the app.
+- When the whole criterion is about them, call report_verdict at once with cant_check, and say that it's about the code.
+- When only part of it is, check the part the app shows. If that part doesn't hold, the verdict is fail. If it holds, the verdict is cant_check, and the evidence says what held and which part you couldn't see.
+
 ## How to check
 1. Start with ui_tree: the screen's texts, buttons and descriptions, each with a key such as e4 and its bounds.
 2. Do what the criterion describes: tap elements by key, wait, read the tree again. restart_app starts over.
