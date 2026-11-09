@@ -1,7 +1,7 @@
 [project]
 name = "le-chonk-eval"
 version = "0.2.0"
-description = "Kotlin Toolchain skill A/B: one Harbor task, run with a Mistral Studio agent, locally or as a Mistral Workflows pipeline"
+description = "Demo pipeline that builds a mobile app from Slack with Mistral Workflows: Studio triage, Vibe in Docker, judged merges, APK releases and emulator QA"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
 dependencies = [
